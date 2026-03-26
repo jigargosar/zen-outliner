@@ -1,0 +1,197 @@
+<h2>zen-outliner — v5 (line alignment fix)</h2>
+<p class="subtitle">Vertical lines now pass through the center of each child bullet.</p>
+
+<div class="mockup">
+  <div class="mockup-header">zen-outliner</div>
+  <div class="mockup-body" style="background: #1a1a1a; padding: 0; min-height: 580px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+
+    <style>
+      .zo5-node { position: relative; }
+
+      .zo5-row {
+        display: flex; align-items: center; padding: 6px 0;
+        position: relative; min-height: 32px;
+      }
+      .zo5-row:hover { background: rgba(255,255,255,0.02); border-radius: 3px; }
+      .zo5-row:hover .zo5-triangle { opacity: 1; }
+
+      .zo5-triangle {
+        position: absolute; left: -20px; top: 0; bottom: 0;
+        width: 20px; display: flex; align-items: center; justify-content: center;
+        opacity: 0; transition: opacity 0.15s;
+        color: #666; font-size: 8px; cursor: pointer; user-select: none;
+      }
+
+      /* Bullet is 22x22 box, dot centered inside */
+      .zo5-bullet-wrap {
+        width: 22px; height: 22px; display: flex; align-items: center;
+        justify-content: center; flex-shrink: 0; cursor: pointer;
+        position: relative; z-index: 2;
+      }
+      .zo5-bullet { width: 7px; height: 7px; background: #666; border-radius: 50%; }
+      .zo5-bullet.collapsed { box-shadow: 0 0 0 3.5px #1a1a1a, 0 0 0 5.5px #555; }
+      .zo5-bullet.leaf { width: 6px; height: 6px; background: #4a4a4a; }
+
+      .zo5-text { color: #c8c8c8; font-size: 16px; line-height: 1.6; margin-left: 10px; }
+
+      /*
+        KEY FIX: Children container positions the vertical line
+        exactly under the parent bullet center.
+
+        Parent bullet center = 11px from left edge (22px / 2).
+        Children are indented by padding-left so text aligns further right.
+        The ::before line is at left: 0 inside .zo5-children,
+        which is offset by margin-left: 11px from parent — so the line
+        sits at exactly 11px = parent bullet center.
+      */
+      .zo5-children {
+        margin-left: 11px; /* align line start with parent bullet center */
+        padding-left: 25px; /* push child content rightward */
+        position: relative;
+      }
+      .zo5-children::before {
+        content: '';
+        position: absolute;
+        left: 0; /* = 11px from parent edge = bullet center */
+        top: 0;
+        bottom: 16px;
+        width: 1px;
+        background: #2e2e2e;
+      }
+
+      /*
+        Each child bullet also needs to be at left: 0 of .zo5-children
+        so bullet center = line position.
+        But children padding-left pushes content right, so we use
+        negative margin on the bullet to pull it back over the line.
+      */
+      .zo5-children > .zo5-node > .zo5-row > .zo5-bullet-wrap {
+        margin-left: -25px; /* pull bullet back to sit on the vertical line */
+        margin-right: 3px;  /* space between bullet and text */
+      }
+
+      .zo5-cursor {
+        display: inline-block; width: 1.5px; height: 16px;
+        background: #d0d0d0; margin-left: 1px;
+        animation: blink 1s step-end infinite; vertical-align: text-bottom;
+      }
+      @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    </style>
+
+    <!-- Top bar -->
+    <div style="display: flex; align-items: center; padding: 14px 32px; border-bottom: 1px solid #252525;">
+      <span style="color: #555; font-size: 14px; cursor: pointer;">Home</span>
+      <span style="color: #3a3a3a; margin: 0 10px;">›</span>
+      <span style="color: #aaa; font-size: 14px;">Projects</span>
+    </div>
+
+    <!-- Outline -->
+    <div style="max-width: 700px; margin: 0 auto; padding: 48px 32px 48px 52px;">
+
+      <div style="font-size: 26px; color: #e8e8e8; font-weight: 500; margin-bottom: 40px;">
+        Projects
+      </div>
+
+      <!-- elm outliner project (expanded) -->
+      <div class="zo5-node">
+        <div class="zo5-row">
+          <div class="zo5-triangle">▼</div>
+          <div class="zo5-bullet-wrap"><div class="zo5-bullet"></div></div>
+          <span class="zo5-text" style="color: #e0e0e0;">elm outliner project</span>
+        </div>
+
+        <div class="zo5-children">
+
+          <!-- Scratch Pad (expanded) -->
+          <div class="zo5-node">
+            <div class="zo5-row">
+              <div class="zo5-triangle">▼</div>
+              <div class="zo5-bullet-wrap"><div class="zo5-bullet"></div></div>
+              <span class="zo5-text" style="color: #e0e0e0;">Scratch Pad</span>
+            </div>
+
+            <div class="zo5-children">
+
+              <!-- empty with child -->
+              <div class="zo5-node">
+                <div class="zo5-row">
+                  <div class="zo5-triangle">▼</div>
+                  <div class="zo5-bullet-wrap"><div class="zo5-bullet"></div></div>
+                  <span class="zo5-text">&nbsp;</span>
+                </div>
+
+                <div class="zo5-children">
+                  <div class="zo5-node">
+                    <div class="zo5-row">
+                      <div class="zo5-bullet-wrap"><div class="zo5-bullet leaf"></div></div>
+                      <span class="zo5-text">s</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- df (leaf) -->
+              <div class="zo5-node">
+                <div class="zo5-row">
+                  <div class="zo5-bullet-wrap"><div class="zo5-bullet leaf"></div></div>
+                  <span class="zo5-text">df</span>
+                </div>
+              </div>
+
+              <!-- as (expanded) -->
+              <div class="zo5-node">
+                <div class="zo5-row">
+                  <div class="zo5-triangle">▼</div>
+                  <div class="zo5-bullet-wrap"><div class="zo5-bullet"></div></div>
+                  <span class="zo5-text">as</span>
+                </div>
+
+                <div class="zo5-children">
+                  <div class="zo5-node">
+                    <div class="zo5-row">
+                      <div class="zo5-bullet-wrap"><div class="zo5-bullet leaf"></div></div>
+                      <span class="zo5-text">asd<span class="zo5-cursor"></span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- + button -->
+      <div style="margin-top: 16px; margin-left: 6px;">
+        <span style="color: #444; font-size: 20px; cursor: pointer;">+</span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div style="margin-top: 32px;">
+  <h3>Line alignment fix</h3>
+  <div class="subtitle" style="max-width: 600px; line-height: 1.8;">
+    The vertical line now runs exactly through the center of each child bullet.<br>
+    Parent bullet center → line → child bullet centers — all on the same x-axis.
+  </div>
+</div>
+
+<div class="options" style="margin-top: 24px;">
+  <div class="option" data-choice="approve" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Lines are aligned now</h3>
+      <p>Visual style is locked in</p>
+    </div>
+  </div>
+  <div class="option" data-choice="still-off" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Still off</h3>
+      <p>I'll screenshot what's wrong</p>
+    </div>
+  </div>
+</div>
