@@ -107,6 +107,13 @@ Defaults (refined during implementation):
 Single empty node with placeholder text.
 
 
+## Persistence
+
+Debounced auto-save to localStorage (save after ~500ms of no changes).
+Load from localStorage on page load. Edge cases (corrupt data, etc.)
+handled during implementation.
+
+
 ## Data Model
 
 ### OutlineItem (pure data — 4 fields)
