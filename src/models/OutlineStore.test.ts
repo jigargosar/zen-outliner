@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { createStore, TStore } from "./OutlineStore";
+import { createStore, TOutlineStore } from "./OutlineStore";
 import type { OutlineStore } from "./OutlineStore";
 
 let store: OutlineStore;
@@ -15,20 +15,27 @@ describe("createStore", () => {
     expect(store.items[0].parentId).toBe(null);
     expect(typeof store.items[0].order).toBe("string");
   });
+
+  it("initializes with empty collapsedIds", () => {
+    expect(store.collapsedIds).toEqual([]);
+  });
 });
 
-describe("computed indexes", () => {
-  it("itemsById returns map of id to item", () => {
-    const map = TStore.itemsById(store);
+describe("computed: itemsById", () => {
+  it("returns map of all items by id", () => {
+    const map = TOutlineStore.itemsById(store);
+    expect(map.size).toBe(1);
     expect(map.get(store.items[0].id)).toBe(store.items[0]);
   });
+});
 
-  it("childrenByParentId groups items by parentId sorted by order", () => {
+describe("computed: childrenByParentId", () => {
+  it("groups and sorts items by parentId", () => {
     const firstId = store.items[0].id;
-    TStore.addAfter(store, firstId);
-    TStore.addAfter(store, firstId);
-    const children = TStore.childrenByParentId(store);
-    const roots = children.get(null) ?? [];
+    TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.addAfter(store, firstId);
+    const map = TOutlineStore.childrenByParentId(store);
+    const roots = map.get(null)!;
     expect(roots.length).toBe(3);
     for (let i = 1; i < roots.length; i++) {
       expect(roots[i].order > roots[i - 1].order).toBe(true);
@@ -37,55 +44,81 @@ describe("computed indexes", () => {
 });
 
 describe("addAfter", () => {
-  it("adds a sibling after the target item", () => {
+  it("adds empty sibling after target", () => {
     const firstId = store.items[0].id;
-    const newId = TStore.addAfter(store, firstId);
+    const newId = TOutlineStore.addAfter(store, firstId);
     expect(store.items.length).toBe(2);
-    expect(typeof newId).toBe("string");
-    const roots = TStore.childrenByParentId(store).get(null) ?? [];
+    const map = TOutlineStore.childrenByParentId(store);
+    const roots = map.get(null)!;
     expect(roots[0].id).toBe(firstId);
     expect(roots[1].id).toBe(newId);
   });
 
-  it("inserts between two items with correct order", () => {
+  it("inserts between target and next sibling", () => {
     const firstId = store.items[0].id;
-    const secondId = TStore.addAfter(store, firstId);
-    const middleId = TStore.addAfter(store, firstId);
-    const roots = TStore.childrenByParentId(store).get(null) ?? [];
-    expect(roots.map((r) => r.id)).toEqual([firstId, middleId, secondId]);
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    const middleId = TOutlineStore.addAfter(store, firstId);
+    const roots = TOutlineStore.childrenByParentId(store).get(null)!;
+    expect(roots[0].id).toBe(firstId);
+    expect(roots[1].id).toBe(middleId);
+    expect(roots[2].id).toBe(secondId);
+  });
+});
+
+describe("setContent", () => {
+  it("updates item content", () => {
+    TOutlineStore.setContent(store, store.items[0].id, "hello");
+    expect(store.items[0].content).toBe("hello");
   });
 });
 
 describe("removeItem", () => {
-  it("removes an item", () => {
+  it("removes item and descendants", () => {
     const firstId = store.items[0].id;
-    const secondId = TStore.addAfter(store, firstId);
-    TStore.removeItem(store, secondId);
-    expect(store.items.length).toBe(1);
+    const childId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, childId);
+    TOutlineStore.removeItem(store, firstId);
+    expect(store.items.length).toBe(0);
   });
 
-  it("removes descendants", () => {
+  it("returns focus target (previous sibling)", () => {
     const firstId = store.items[0].id;
-    TStore.addAfter(store, firstId);
-    const secondId = (TStore.childrenByParentId(store).get(null) ?? [])[1].id;
-    TStore.indentItem(store, secondId);
-    TStore.removeItem(store, firstId);
-    expect(store.items.length).toBe(0);
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    const focusTarget = TOutlineStore.removeItem(store, secondId);
+    expect(focusTarget).toBe(firstId);
+  });
+
+  it("returns parent as focus target when no previous sibling", () => {
+    const firstId = store.items[0].id;
+    const childId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, childId);
+    const focusTarget = TOutlineStore.removeItem(store, childId);
+    expect(focusTarget).toBe(firstId);
+  });
+
+  it("cleans up collapsedIds for removed items", () => {
+    const firstId = store.items[0].id;
+    const childId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, childId);
+    TOutlineStore.toggleCollapse(store, firstId);
+    expect(store.collapsedIds).toContain(firstId);
+    TOutlineStore.removeItem(store, firstId);
+    expect(store.collapsedIds).not.toContain(firstId);
   });
 });
 
 describe("indentItem", () => {
-  it("makes item a child of its previous sibling", () => {
+  it("makes item child of previous sibling", () => {
     const firstId = store.items[0].id;
-    const secondId = TStore.addAfter(store, firstId);
-    TStore.indentItem(store, secondId);
-    const item = TStore.itemsById(store).get(secondId)!;
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, secondId);
+    const item = TOutlineStore.itemsById(store).get(secondId)!;
     expect(item.parentId).toBe(firstId);
   });
 
-  it("does nothing if item is first sibling", () => {
+  it("does nothing for first sibling", () => {
     const firstId = store.items[0].id;
-    TStore.indentItem(store, firstId);
+    TOutlineStore.indentItem(store, firstId);
     expect(store.items[0].parentId).toBe(null);
   });
 });
@@ -93,72 +126,131 @@ describe("indentItem", () => {
 describe("outdentItem", () => {
   it("moves item to parent's level after parent", () => {
     const firstId = store.items[0].id;
-    const secondId = TStore.addAfter(store, firstId);
-    TStore.indentItem(store, secondId);
-    TStore.outdentItem(store, secondId);
-    const item = TStore.itemsById(store).get(secondId)!;
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, secondId);
+    TOutlineStore.outdentItem(store, secondId);
+    const item = TOutlineStore.itemsById(store).get(secondId)!;
     expect(item.parentId).toBe(null);
-    const roots = TStore.childrenByParentId(store).get(null) ?? [];
-    expect(roots[1].id).toBe(secondId);
+  });
+
+  it("does nothing for root items", () => {
+    TOutlineStore.outdentItem(store, store.items[0].id);
+    expect(store.items[0].parentId).toBe(null);
   });
 });
 
-describe("moveItemUp / moveItemDown", () => {
-  it("reorders siblings", () => {
+describe("moveItemUp", () => {
+  it("moves item before previous sibling", () => {
     const firstId = store.items[0].id;
-    TStore.addAfter(store, firstId);
-    TStore.addAfter(store, firstId);
-    const roots = TStore.childrenByParentId(store).get(null) ?? [];
-    const thirdId = roots[2].id;
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.moveItemUp(store, secondId);
+    const roots = TOutlineStore.childrenByParentId(store).get(null)!;
+    expect(roots[0].id).toBe(secondId);
+    expect(roots[1].id).toBe(firstId);
+  });
 
-    TStore.moveItemUp(store, thirdId);
-    const newRoots = TStore.childrenByParentId(store).get(null) ?? [];
-    expect(newRoots[1].id).toBe(thirdId);
+  it("does nothing for first sibling", () => {
+    const firstId = store.items[0].id;
+    TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.moveItemUp(store, firstId);
+    const roots = TOutlineStore.childrenByParentId(store).get(null)!;
+    expect(roots[0].id).toBe(firstId);
+  });
+});
+
+describe("moveItemDown", () => {
+  it("moves item after next sibling", () => {
+    const firstId = store.items[0].id;
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.moveItemDown(store, firstId);
+    const roots = TOutlineStore.childrenByParentId(store).get(null)!;
+    expect(roots[0].id).toBe(secondId);
+    expect(roots[1].id).toBe(firstId);
   });
 });
 
 describe("toggleCollapse", () => {
-  it("toggles item in collapsedIds", () => {
-    const firstId = store.items[0].id;
-    expect(store.collapsedIds.includes(firstId)).toBe(false);
-    TStore.toggleCollapse(store, firstId);
-    expect(store.collapsedIds.includes(firstId)).toBe(true);
-    TStore.toggleCollapse(store, firstId);
-    expect(store.collapsedIds.includes(firstId)).toBe(false);
+  it("adds id to collapsedIds", () => {
+    const id = store.items[0].id;
+    TOutlineStore.toggleCollapse(store, id);
+    expect(store.collapsedIds).toContain(id);
+  });
+
+  it("removes id on second toggle", () => {
+    const id = store.items[0].id;
+    TOutlineStore.toggleCollapse(store, id);
+    TOutlineStore.toggleCollapse(store, id);
+    expect(store.collapsedIds).not.toContain(id);
   });
 });
 
-describe("zoom", () => {
-  it("sets and clears zoomId", () => {
-    const firstId = store.items[0].id;
-    TStore.zoom(store, firstId);
-    expect(store.zoomId).toBe(firstId);
-    TStore.zoom(store, null);
-    expect(store.zoomId).toBe(null);
+describe("isCollapsed", () => {
+  it("returns collapse state", () => {
+    const id = store.items[0].id;
+    expect(TOutlineStore.isCollapsed(store, id)).toBe(false);
+    TOutlineStore.toggleCollapse(store, id);
+    expect(TOutlineStore.isCollapsed(store, id)).toBe(true);
   });
 });
 
-describe("setContent", () => {
-  it("updates item content", () => {
-    const firstId = store.items[0].id;
-    TStore.setContent(store, firstId, "hello");
-    expect(store.items[0].content).toBe("hello");
+describe("splitNode", () => {
+  it("splits content at cursor position", () => {
+    const id = store.items[0].id;
+    TOutlineStore.setContent(store, id, "hello world");
+    const newId = TOutlineStore.splitNode(store, id, 5);
+    const original = TOutlineStore.itemsById(store).get(id)!;
+    const newItem = TOutlineStore.itemsById(store).get(newId)!;
+    expect(original.content).toBe("hello");
+    expect(newItem.content).toBe(" world");
+    expect(newItem.parentId).toBe(original.parentId);
   });
 });
 
-describe("getBreadcrumbs", () => {
-  it("returns Home when not zoomed", () => {
-    const crumbs = TStore.getBreadcrumbs(store);
-    expect(crumbs).toEqual([{ id: null, label: "Home" }]);
+describe("mergeWithPrevious", () => {
+  it("merges content into previous sibling", () => {
+    const firstId = store.items[0].id;
+    TOutlineStore.setContent(store, firstId, "hello");
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.setContent(store, secondId, " world");
+    const result = TOutlineStore.mergeWithPrevious(store, secondId);
+    expect(result).toEqual({ targetId: firstId, cursorPos: 5 });
+    expect(store.items.length).toBe(1);
+    expect(store.items[0].content).toBe("hello world");
   });
 
-  it("returns path when zoomed", () => {
+  it("returns null for first sibling (no previous)", () => {
+    const result = TOutlineStore.mergeWithPrevious(store, store.items[0].id);
+    expect(result).toBe(null);
+  });
+});
+
+describe("getVisibleNodes", () => {
+  it("returns root items when nothing collapsed", () => {
     const firstId = store.items[0].id;
-    TStore.setContent(store, firstId, "Projects");
-    TStore.zoom(store, firstId);
-    const crumbs = TStore.getBreadcrumbs(store);
-    expect(crumbs.length).toBe(2);
-    expect(crumbs[0]).toEqual({ id: null, label: "Home" });
-    expect(crumbs[1]).toEqual({ id: firstId, label: "Projects" });
+    TOutlineStore.addAfter(store, firstId);
+    const visible = TOutlineStore.getVisibleNodes(store);
+    expect(visible.length).toBe(2);
+  });
+
+  it("hides children of collapsed nodes", () => {
+    const firstId = store.items[0].id;
+    const childId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, childId);
+    TOutlineStore.toggleCollapse(store, firstId);
+    const visible = TOutlineStore.getVisibleNodes(store);
+    expect(visible.length).toBe(1);
+    expect(visible[0].id).toBe(firstId);
+  });
+});
+
+describe("canDelete", () => {
+  it("returns false for last remaining item", () => {
+    expect(TOutlineStore.canDelete(store, store.items[0].id)).toBe(false);
+  });
+
+  it("returns true when more than one item", () => {
+    const firstId = store.items[0].id;
+    TOutlineStore.addAfter(store, firstId);
+    expect(TOutlineStore.canDelete(store, firstId)).toBe(true);
   });
 });

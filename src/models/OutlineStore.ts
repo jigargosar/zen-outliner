@@ -1,17 +1,12 @@
 import { node, nodeType } from "mobx-bonsai";
 import { generateKeyBetween } from "fractional-indexing";
+import type { OutlineItem } from "./types";
 
-export interface OutlineItem {
-  id: string;
-  parentId: string | null;
-  content: string;
-  order: string;
-}
+export type { OutlineItem } from "./types";
 
 export interface OutlineStore {
   items: OutlineItem[];
   collapsedIds: string[];
-  zoomId: string | null;
 }
 
 let counter = 0;
@@ -19,7 +14,7 @@ function genId(): string {
   return `${Date.now()}-${++counter}`;
 }
 
-export const TStore = nodeType<OutlineStore>()
+export const TOutlineStore = nodeType<OutlineStore>()
   .getters({
     itemsById(): Map<string, OutlineItem> {
       const map = new Map<string, OutlineItem>();
@@ -33,71 +28,69 @@ export const TStore = nodeType<OutlineStore>()
       const map = new Map<string | null, OutlineItem[]>();
       for (const item of this.items) {
         const key = item.parentId;
-        let group = map.get(key);
-        if (!group) {
-          group = [];
-          map.set(key, group);
+        let list = map.get(key);
+        if (!list) {
+          list = [];
+          map.set(key, list);
         }
-        group.push(item);
+        list.push(item);
       }
-      for (const group of map.values()) {
-        group.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      for (const list of map.values()) {
+        list.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
       }
       return map;
     },
 
     getChildren(parentId: string | null): OutlineItem[] {
-      return this.items
-        .filter((i) => i.parentId === parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      return TOutlineStore.childrenByParentId(this).get(parentId) ?? [];
     },
 
-    getBreadcrumbs(): { id: string | null; label: string }[] {
-      const crumbs: { id: string | null; label: string }[] = [
-        { id: null, label: "Home" },
-      ];
-      if (!this.zoomId) return crumbs;
-
-      const path: OutlineItem[] = [];
-      let current = this.items.find((i) => i.id === this.zoomId);
-      while (current) {
-        path.unshift(current);
-        current = current.parentId
-          ? this.items.find((i) => i.id === current!.parentId)
-          : undefined;
-      }
-      for (const item of path) {
-        crumbs.push({ id: item.id, label: item.content || "(empty)" });
-      }
-      return crumbs;
-    },
-
-    getZoomTitle(): string {
-      if (!this.zoomId) return "Home";
-      const item = this.items.find((i) => i.id === this.zoomId);
-      return item?.content || "(empty)";
+    getSiblings(itemId: string): OutlineItem[] {
+      const item = TOutlineStore.itemsById(this).get(itemId);
+      if (!item) return [];
+      return TOutlineStore.getChildren(this, item.parentId);
     },
 
     isCollapsed(itemId: string): boolean {
       return this.collapsedIds.includes(itemId);
     },
+
+    hasChildren(itemId: string): boolean {
+      return TOutlineStore.getChildren(this, itemId).length > 0;
+    },
+
+    canDelete(itemId: string): boolean {
+      return this.items.length > 1;
+    },
+
+    getVisibleNodes(): OutlineItem[] {
+      const result: OutlineItem[] = [];
+      const walk = (parentId: string | null) => {
+        const children = TOutlineStore.getChildren(this, parentId);
+        for (const child of children) {
+          result.push(child);
+          if (!TOutlineStore.isCollapsed(this, child.id)) {
+            walk(child.id);
+          }
+        }
+      };
+      walk(null);
+      return result;
+    },
   })
   .actions({
     setContent(itemId: string, content: string) {
-      const item = this.items.find((i) => i.id === itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (item) item.content = content;
     },
 
     addAfter(afterId: string): string {
-      const target = this.items.find((i) => i.id === afterId);
+      const target = TOutlineStore.itemsById(this).get(afterId);
       if (!target) return "";
 
-      const siblings = this.items
-        .filter((i) => i.parentId === target.parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const siblings = TOutlineStore.getChildren(this, target.parentId);
       const idx = siblings.findIndex((s) => s.id === afterId);
       const nextSibling = siblings[idx + 1];
-
       const newOrder = generateKeyBetween(
         target.order,
         nextSibling?.order ?? null
@@ -113,13 +106,23 @@ export const TStore = nodeType<OutlineStore>()
       return newItem.id;
     },
 
-    removeItem(itemId: string) {
+    removeItem(itemId: string): string | null {
+      if (!TOutlineStore.canDelete(this, itemId)) return null;
+
+      const item = TOutlineStore.itemsById(this).get(itemId);
+      if (!item) return null;
+
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
+      const idx = siblings.findIndex((s) => s.id === itemId);
+      const focusTarget = idx > 0 ? siblings[idx - 1].id : item.parentId;
+
       const idsToRemove = new Set<string>();
       const collectIds = (id: string) => {
         idsToRemove.add(id);
-        this.items
-          .filter((i) => i.parentId === id)
-          .forEach((i) => collectIds(i.id));
+        const children = TOutlineStore.getChildren(this, id);
+        for (const child of children) {
+          collectIds(child.id);
+        }
       };
       collectIds(itemId);
 
@@ -129,26 +132,25 @@ export const TStore = nodeType<OutlineStore>()
         }
       }
 
-      for (const id of idsToRemove) {
-        const idx = this.collapsedIds.indexOf(id);
-        if (idx >= 0) this.collapsedIds.splice(idx, 1);
+      for (let i = this.collapsedIds.length - 1; i >= 0; i--) {
+        if (idsToRemove.has(this.collapsedIds[i])) {
+          this.collapsedIds.splice(i, 1);
+        }
       }
+
+      return focusTarget;
     },
 
     indentItem(itemId: string) {
-      const item = this.items.find((i) => i.id === itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (!item) return;
 
-      const siblings = this.items
-        .filter((i) => i.parentId === item.parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
       const idx = siblings.findIndex((s) => s.id === itemId);
       if (idx === 0) return;
 
       const newParentId = siblings[idx - 1].id;
-      const newSiblings = this.items
-        .filter((i) => i.parentId === newParentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const newSiblings = TOutlineStore.getChildren(this, newParentId);
       const lastChild = newSiblings[newSiblings.length - 1];
 
       item.parentId = newParentId;
@@ -156,32 +158,28 @@ export const TStore = nodeType<OutlineStore>()
     },
 
     outdentItem(itemId: string) {
-      const item = this.items.find((i) => i.id === itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (!item || item.parentId === null) return;
 
-      const parent = this.items.find((i) => i.id === item.parentId);
+      const parent = TOutlineStore.itemsById(this).get(item.parentId);
       if (!parent) return;
 
-      const parentSiblings = this.items
-        .filter((i) => i.parentId === parent.parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const parentSiblings = TOutlineStore.getChildren(this, parent.parentId);
       const parentIdx = parentSiblings.findIndex((s) => s.id === parent.id);
-      const nextUncle = parentSiblings[parentIdx + 1];
+      const nextAfterParent = parentSiblings[parentIdx + 1];
 
       item.parentId = parent.parentId;
       item.order = generateKeyBetween(
         parent.order,
-        nextUncle?.order ?? null
+        nextAfterParent?.order ?? null
       );
     },
 
     moveItemUp(itemId: string) {
-      const item = this.items.find((i) => i.id === itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (!item) return;
 
-      const siblings = this.items
-        .filter((i) => i.parentId === item.parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
       const idx = siblings.findIndex((s) => s.id === itemId);
       if (idx === 0) return;
 
@@ -195,12 +193,10 @@ export const TStore = nodeType<OutlineStore>()
     },
 
     moveItemDown(itemId: string) {
-      const item = this.items.find((i) => i.id === itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (!item) return;
 
-      const siblings = this.items
-        .filter((i) => i.parentId === item.parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
       const idx = siblings.findIndex((s) => s.id === itemId);
       if (idx === siblings.length - 1) return;
 
@@ -222,33 +218,62 @@ export const TStore = nodeType<OutlineStore>()
       }
     },
 
-    zoom(itemId: string | null) {
-      this.zoomId = itemId;
+    splitNode(itemId: string, cursorPos: number): string {
+      const item = TOutlineStore.itemsById(this).get(itemId);
+      if (!item) return "";
+
+      const beforeText = item.content.slice(0, cursorPos);
+      const afterText = item.content.slice(cursorPos);
+
+      item.content = beforeText;
+
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
+      const idx = siblings.findIndex((s) => s.id === itemId);
+      const nextSibling = siblings[idx + 1];
+      const newOrder = generateKeyBetween(
+        item.order,
+        nextSibling?.order ?? null
+      );
+
+      const newItem: OutlineItem = {
+        id: genId(),
+        parentId: item.parentId,
+        content: afterText,
+        order: newOrder,
+      };
+      this.items.push(newItem);
+      return newItem.id;
+    },
+
+    mergeWithPrevious(itemId: string): { targetId: string; cursorPos: number } | null {
+      const item = TOutlineStore.itemsById(this).get(itemId);
+      if (!item) return null;
+
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
+      const idx = siblings.findIndex((s) => s.id === itemId);
+      if (idx === 0) return null;
+
+      const prev = siblings[idx - 1];
+      const cursorPos = prev.content.length;
+      prev.content += item.content;
+
+      const itemIdx = this.items.findIndex((i) => i.id === itemId);
+      if (itemIdx >= 0) this.items.splice(itemIdx, 1);
+
+      return { targetId: prev.id, cursorPos };
     },
   });
 
-const STORAGE_KEY = "zen-outliner-data";
-
-export function createStore(loadFromStorage = false): OutlineStore {
-  if (loadFromStorage) {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        return node(JSON.parse(raw));
-      }
-    } catch {
-      // fall through
-    }
-  }
-
+export function createStore(): OutlineStore {
   return node<OutlineStore>({
-    items: [{
-      id: genId(),
-      parentId: null,
-      content: "",
-      order: generateKeyBetween(null, null),
-    }],
+    items: [
+      {
+        id: genId(),
+        parentId: null,
+        content: "",
+        order: generateKeyBetween(null, null),
+      },
+    ],
     collapsedIds: [],
-    zoomId: null,
   });
 }
