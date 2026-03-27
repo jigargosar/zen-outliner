@@ -59,6 +59,24 @@ Technical approach:
 4. localStorage persistence — auto-save on every change
 
 
+## Focus Behavior
+
+General principle: focus stays on the node you acted on.
+If that node no longer exists, focus goes to the nearest
+logical neighbor (previous sibling, or parent).
+
+Defaults (refined during implementation):
+  Collapse        stay on collapsed node
+  Expand          stay on expanded node
+  Indent (Tab)    stay on indented node (now nested)
+  Outdent         stay on outdented node (now promoted)
+  Delete          previous sibling, or parent if none
+  Add sibling     focus new node
+  Move up/down    stay on moved node
+  Split (Enter)   focus new node (text after cursor)
+  Merge (Bksp)    focus merged node, cursor at join point
+
+
 ## Delete Behavior
 
 1. Delete a node deletes the node AND all its children
