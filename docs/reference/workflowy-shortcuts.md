@@ -4,6 +4,7 @@ Complete reference of Workflowy's keyboard shortcuts, organized by category.
 Used as the feature map for zen-outliner — each shortcut implies a feature.
 
 Win = Windows/Linux keybinding, Mac = macOS keybinding.
+Verified 2026-03-27 against official docs + community sources.
 
 
 # Core Editing
@@ -31,7 +32,7 @@ Win = Windows/Linux keybinding, Mac = macOS keybinding.
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 | 7   | Mark complete            | Ctrl+Enter        | Cmd+Enter         | Strikethrough toggle       |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 8   | Duplicate node           | Ctrl+Shift+D      | Cmd+Shift+D       | Copies node below with     |
+| 8   | Duplicate node           | Alt+Shift+D       | Cmd+Shift+D       | Copies node below with     |
 |     |                          |                   |                   | #copy tag                  |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 
@@ -59,9 +60,10 @@ Win = Windows/Linux keybinding, Mac = macOS keybinding.
 | #   | Action                   | Win               | Mac               | Notes                      |
 +-----+==========================+===================+===================+============================+
 | 13  | Move node up             | Alt+Shift+Up      | Ctrl+Shift+Up     | Swaps with previous        |
-|     |                          |                   |                   | sibling                    |
+|     |                          |                   |                   | sibling only               |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 | 14  | Move node down           | Alt+Shift+Down    | Ctrl+Shift+Down   | Swaps with next sibling    |
+|     |                          |                   |                   | only                       |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 
 
@@ -74,9 +76,13 @@ Win = Windows/Linux keybinding, Mac = macOS keybinding.
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 | 16  | Move focus down          | Down arrow        | Down arrow        | Next visible node          |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 17  | Zoom into node           | Alt+Right         | Cmd+.             | Focused node becomes page  |
+| 17  | Zoom into node           | Alt+.             | Cmd+.             | Focused node becomes page  |
+|     |                          | (Alt+Right also   |                   |                            |
+|     |                          | works, legacy)    |                   |                            |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 18  | Zoom out one level       | Alt+Left          | Cmd+,             | Go to parent's view        |
+| 18  | Zoom out one level       | Alt+,             | Cmd+,             | Go to parent's view        |
+|     |                          | (Alt+Left also    |                   |                            |
+|     |                          | works, legacy)    |                   |                            |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 | 19  | Zoom to home             | Ctrl+'            | Cmd+'             | Navigate to root           |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
@@ -94,12 +100,15 @@ Win = Windows/Linux keybinding, Mac = macOS keybinding.
 +-----+==========================+===================+===================+============================+
 | #   | Action                   | Win               | Mac               | Notes                      |
 +-----+==========================+===================+===================+============================+
-| 23  | Toggle collapse          | Ctrl+Down         | Ctrl+Down         | Collapse focused node      |
+| 23  | Expand focused node      | Ctrl+Down         | Ctrl+Down         | Opens children             |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 24  | Toggle expand            | Ctrl+Up           | Ctrl+Up           | Expand focused node        |
+| 24  | Collapse focused node    | Ctrl+Up           | Ctrl+Up           | Hides children             |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 | 25  | Expand/collapse all at   | Ctrl+Space        | Ctrl+Space        | All siblings at same depth |
 |     | same level               |                   |                   |                            |
++-----+--------------------------+-------------------+-------------------+----------------------------+
+| 26  | Expand/collapse ALL      | Ctrl+Space+Space  | Ctrl+Space+Space  | Double-tap Space while     |
+|     | children recursively     | (double-tap)      | (double-tap)      | holding Ctrl               |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 
 
@@ -108,14 +117,22 @@ Win = Windows/Linux keybinding, Mac = macOS keybinding.
 +-----+==========================+===================+===================+============================+
 | #   | Action                   | Win               | Mac               | Notes                      |
 +-----+==========================+===================+===================+============================+
-| 26  | Bold                     | Ctrl+B            | Cmd+B             | Toggle bold on selection   |
+| 27  | Bold                     | Ctrl+B            | Cmd+B             | Toggle bold on selection   |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 27  | Italic                   | Ctrl+I            | Cmd+I             | Toggle italic on selection |
+| 28  | Italic                   | Ctrl+I            | Cmd+I             | Toggle italic on selection |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 28  | Underline                | Ctrl+U            | Cmd+U             | Toggle underline on        |
+| 29  | Underline                | Ctrl+U            | Cmd+U             | Toggle underline on        |
 |     |                          |                   |                   | selection                  |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 29  | Link selected text       | Ctrl+K            | Cmd+K             | Creates hyperlink          |
+| 30  | Strikethrough text       | Ctrl+Shift+X      | Cmd+Shift+X       | Toggle strikethrough on    |
+|     |                          |                   |                   | selected text              |
++-----+--------------------------+-------------------+-------------------+----------------------------+
+| 31  | Inline code              | Ctrl+Shift+C      | Cmd+Shift+C       | Toggle code formatting     |
++-----+--------------------------+-------------------+-------------------+----------------------------+
+| 32  | Highlight text           | Ctrl+Shift+H      | Cmd+Shift+H       | Toggle highlight on        |
+|     |                          |                   |                   | selection                  |
++-----+--------------------------+-------------------+-------------------+----------------------------+
+| 33  | Link selected text       | Ctrl+K            | Cmd+K             | Creates hyperlink          |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 
 
@@ -124,10 +141,13 @@ Win = Windows/Linux keybinding, Mac = macOS keybinding.
 +-----+==========================+===================+===================+============================+
 | #   | Action                   | Win               | Mac               | Notes                      |
 +-----+==========================+===================+===================+============================+
-| 30  | Copy link to node        | Alt+Shift+L       | Cmd+Shift+L       | Copies shareable URL       |
+| 34  | Copy link to node        | Alt+Shift+L       | Cmd+Shift+L       | Copies shareable URL       |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 31  | Mirror node              | Alt+Shift+M       | Cmd+Shift+M       | Creates a live mirror      |
+| 35  | Mirror node              | Alt+Shift+M       | Cmd+Shift+M       | Creates a live mirror      |
 |     |                          |                   |                   | (same node, two locations) |
++-----+--------------------------+-------------------+-------------------+----------------------------+
+| 36  | Move To dialog           | Ctrl+Alt+M        | Cmd+Ctrl+M        | Move node to another       |
+|     |                          |                   |                   | location via dialog        |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 
 
@@ -136,9 +156,9 @@ Win = Windows/Linux keybinding, Mac = macOS keybinding.
 +-----+==========================+===================+===================+============================+
 | #   | Action                   | Win               | Mac               | Notes                      |
 +-----+==========================+===================+===================+============================+
-| 32  | Multi-select nodes       | Alt+Click         | Alt+Click         | Select arbitrary nodes     |
+| 37  | Multi-select nodes       | Alt+Click         | Alt+Click         | Select arbitrary nodes     |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 33  | Duplicate via drag       | Alt+Drag          | Alt+Drag          | Clone node on drag         |
+| 38  | Duplicate via drag       | Alt+Drag          | Alt+Drag          | Clone node on drag         |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 
 
@@ -147,12 +167,12 @@ Win = Windows/Linux keybinding, Mac = macOS keybinding.
 +-----+==========================+===================+===================+============================+
 | #   | Action                   | Win               | Mac               | Notes                      |
 +-----+==========================+===================+===================+============================+
-| 34  | Open search              | Esc               | Esc               | Opens search bar           |
+| 39  | Open search              | Esc               | Esc               | Opens search bar           |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 35  | Show/hide completed      | Ctrl+O            | Cmd+O             | Toggle completed items     |
+| 40  | Show/hide completed      | Ctrl+O            | Cmd+O             | Toggle completed items     |
 |     |                          |                   |                   | visibility                 |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 36  | Star page                | Ctrl+Shift+8      | Cmd+Shift+8       | Bookmark current zoom      |
+| 41  | Star page                | Ctrl+Shift+8      | Cmd+Shift+8       | Bookmark current zoom      |
 |     |                          |                   |                   | level                      |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 
@@ -162,11 +182,11 @@ Win = Windows/Linux keybinding, Mac = macOS keybinding.
 +-----+==========================+===================+===================+============================+
 | #   | Action                   | Win               | Mac               | Notes                      |
 +-----+==========================+===================+===================+============================+
-| 37  | Undo                     | Ctrl+Z            | Cmd+Z             | Reverts last action        |
+| 42  | Undo                     | Ctrl+Z            | Cmd+Z             | Reverts last action        |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 38  | Redo                     | Ctrl+Shift+Z      | Cmd+Shift+Z       | Re-applies undone action   |
+| 43  | Redo                     | Ctrl+Shift+Z      | Cmd+Shift+Z       | Re-applies undone action   |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 39  | Redo (alt)               | Ctrl+Y            | Cmd+Y             | Same as above              |
+| 44  | Redo (alt)               | Ctrl+Y            | Cmd+Y             | Same as above              |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 
 
@@ -175,12 +195,30 @@ Win = Windows/Linux keybinding, Mac = macOS keybinding.
 +-----+==========================+===================+===================+============================+
 | #   | Action                   | Win               | Mac               | Notes                      |
 +-----+==========================+===================+===================+============================+
-| 40  | Show shortcuts panel     | Ctrl+?            | Cmd+?             | Toggle shortcuts reference |
+| 45  | Toggle sidebar           | Alt+L             | Ctrl+L            | Show/hide sidebar panel    |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
-| 41  | Print                    | Ctrl+P            | Cmd+P             | Print current view         |
+| 46  | Show shortcuts panel     | Ctrl+?            | Cmd+?             | Toggle shortcuts reference |
++-----+--------------------------+-------------------+-------------------+----------------------------+
+| 47  | Print                    | Ctrl+P            | Cmd+P             | Print current view         |
++-----+--------------------------+-------------------+-------------------+----------------------------+
+
+
+# Content Triggers (not shortcuts, typed sequences)
+
++-----+==========================+===================+===================+============================+
+| #   | Action                   | Trigger           |                   | Notes                      |
++-----+==========================+===================+===================+============================+
+| 48  | Code block               | ``` on empty line | Same              | Creates fenced code block  |
++-----+--------------------------+-------------------+-------------------+----------------------------+
+| 49  | Quote block              | > then Space on   | Same              | Creates blockquote         |
+|     |                          | empty line        |                   |                            |
 +-----+--------------------------+-------------------+-------------------+----------------------------+
 
 
 Sources:
   https://workflowy.com/learn/keyboard-shortcuts/
   https://blog.workflowy.com/keyboard-shortcut-challenge/
+  https://blog.workflowy.com/code-blocks-inline-code-quotes-strikethrough/
+  https://blog.workflowy.com/product-update-august-29-2023-filter-by-creation-date-sidebar-keyboard-shortcut-mirror-and-boards-slash-commands-minor-fixes/
+  https://blog.workflowy.com/move-on-up-move-to-is-now-available/
+  https://workflowy.zendesk.com/hc/en-us/community/posts/360042620451-Duplicate-Keyboard-Shortcut-Does-Not-Work
