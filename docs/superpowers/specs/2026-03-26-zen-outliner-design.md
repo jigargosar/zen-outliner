@@ -8,6 +8,8 @@ A Workflowy clone. Infinite-nesting outliner. Dark mode only. Get to working sta
 
 - React + TypeScript + Vite
 - Tailwind CSS (dark mode only)
+- mobx-bonsai + mobx-react-lite (state, snapshots, future undo)
+- fractional-indexing (string-based ordering)
 - localStorage (JSON) for persistence
 - No auth, no backend, no Supabase (for now)
 - SPA — single page application
@@ -47,9 +49,32 @@ A Workflowy clone. Infinite-nesting outliner. Dark mode only. Get to working sta
 
 ## Data Model
 
-- Flat array with parentId (decided during brainstorm)
-- Each node: `{ id, parentId, content, order, collapsed }`
-- Tree reconstructed from flat list for rendering
+### OutlineItem (pure data — 4 fields)
+```
+id:       string        — unique ID (generated client-side)
+parentId: string | null — parent reference (null = root)
+content:  string        — the text
+order:    string        — fractional index for sorting (string-based)
+```
+
+### OutlineStore (root state)
+```
+items:        OutlineItem[]  — flat array, source of truth
+collapsedIds: string[]       — which items are collapsed (view state, NOT on items)
+zoomId:       string | null  — which item is zoomed into (view state)
+```
+
+### Computed indexes (derived, not stored)
+```
+itemsById:          Map<string, OutlineItem>           — O(1) ID lookup
+childrenByParentId: Map<string | null, OutlineItem[]>  — O(1) children lookup, sorted by order
+```
+
+### Key decisions
+- Flat array — mutations are single-field changes (parentId for indent/outdent, order for reorder)
+- No collapsed field on items — collapse is view state, not data. Keeps undo/redo clean, keeps Supabase schema clean.
+- Fractional indexing — insert between any two items without reindexing siblings
+- Computed indexes — MobX recalculates on mutation, caches until next change
 - Maps directly to Supabase rows when backend is added later
 
 ## Out of Scope (v1)

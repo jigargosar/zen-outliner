@@ -1,49 +1,27 @@
-# zen-outliner v1 Implementation Plan (final — mobx-bonsai + flat list)
+# zen-outliner v1 Implementation Plan (v3 — final model)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a working Workflowy clone — infinite-nesting outliner with keyboard navigation, dark mode only, localStorage persistence.
 
-**Architecture:** Flat array of items with parentId references. mobx-bonsai for observable state, snapshots, and persistence. Computed indexes (childrenByParentId, itemsById) for O(1) lookups. Fractional indexing (fractional-indexing library) for ordering. React components wrapped with observer() from mobx-react-lite. Collapse and zoom are view state on the store, not on items.
+**Architecture:** Flat array of OutlineItems in a mobx-bonsai store. Computed indexes for O(1) lookups. Fractional indexing for ordering. observer() components from mobx-react-lite. onSnapshot for auto-save to localStorage.
 
 **Tech Stack:** React 19, TypeScript, Vite, Tailwind CSS v4, pnpm, mobx, mobx-bonsai, mobx-react-lite, fractional-indexing
 
 ---
-
-## Data Model
-
-```ts
-// Persisted
-interface OutlineItem {
-  id: string;
-  parentId: string | null;
-  content: string;
-  order: string; // fractional index
-}
-
-interface OutlineStore {
-  items: OutlineItem[];
-  collapsedIds: string[];
-  zoomId: string | null;
-}
-
-// Computed (derived, not stored)
-// childrenByParentId: Map<string | null, OutlineItem[]>
-// itemsById: Map<string, OutlineItem>
-```
 
 ## File Structure
 
 ```
 src/
   main.tsx                  — Entry point, renders App
-  App.tsx                   — Creates store, renders Breadcrumb + OutlineTree
+  App.tsx                   — Top-level: creates store, renders Breadcrumb + OutlineTree
   models/
-    OutlineStore.ts         — nodeType with items, computed indexes, all actions
+    OutlineStore.ts         — Store: nodeType with items, collapsedIds, zoomId, all actions, computed indexes
     OutlineStore.test.ts    — Tests for all store operations
   components/
     OutlineTree.tsx          — Recursive tree renderer (observer)
-    OutlineNode.tsx          — Single node: bullet, text, keyboard (observer)
+    OutlineNode.tsx          — Single node: bullet, text input, hover triangle (observer)
     Breadcrumb.tsx           — Zoom breadcrumb navigation (observer)
   index.css                 — Tailwind imports + custom dark theme
 index.html                  — Vite entry HTML
@@ -51,18 +29,18 @@ index.html                  — Vite entry HTML
 
 ---
 
-## Completed Tasks
+## Completed
 
 ### Task 0: Scaffold ✅
-Vite + React 19 + TypeScript + Tailwind v4 scaffolded and running.
+Vite + React 19 + TypeScript + Tailwind v4 done.
 
 ---
 
-### Task 1: Install dependencies and remove old files
+### Task 1: Install dependencies + clean up old code
 
 **Files:**
-- Delete: `src/store.ts`, `src/store.test.ts`, `src/types.ts`
 - Modify: `package.json`
+- Delete: `src/store.ts`, `src/store.test.ts`, `src/types.ts`
 
 - [ ] **Step 1: Install dependencies**
 
@@ -70,22 +48,43 @@ Vite + React 19 + TypeScript + Tailwind v4 scaffolded and running.
 pnpm add mobx mobx-bonsai mobx-react-lite fractional-indexing
 ```
 
-- [ ] **Step 2: Remove old files**
+- [ ] **Step 2: Install fractional-indexing types if available, otherwise create declaration**
+
+```bash
+pnpm add -D @types/fractional-indexing 2>/dev/null || true
+```
+
+If no types exist, create `src/fractional-indexing.d.ts`:
+
+```ts
+declare module "fractional-indexing" {
+  export function generateKeyBetween(
+    a: string | null,
+    b: string | null
+  ): string;
+  export function generateNKeysBetween(
+    a: string | null,
+    b: string | null,
+    n: number
+  ): string[];
+}
+```
+
+- [ ] **Step 3: Remove old files**
 
 ```bash
 rm -f src/store.ts src/store.test.ts src/types.ts
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add -A
-git commit -m "chore: add mobx-bonsai + fractional-indexing, remove old store"
+git add -A && git commit -m "chore: add mobx-bonsai, fractional-indexing; remove old store"
 ```
 
 ---
 
-### Task 2: OutlineStore — model, computed indexes, actions, tests
+### Task 2: OutlineStore — model, actions, computed indexes
 
 **Files:**
 - Create: `src/models/OutlineStore.ts`
@@ -97,7 +96,8 @@ Create `src/models/OutlineStore.test.ts`:
 
 ```ts
 import { describe, it, expect, beforeEach } from "vitest";
-import { createStore, TStore } from "./OutlineStore";
+import { createStore } from "./OutlineStore";
+import { TOutlineStore } from "./OutlineStore";
 import type { OutlineStore } from "./OutlineStore";
 
 let store: OutlineStore;
@@ -116,19 +116,20 @@ describe("createStore", () => {
 });
 
 describe("computed indexes", () => {
-  it("itemsById returns map of id to item", () => {
-    const map = TStore.itemsById(store);
+  it("itemsById returns map of all items", () => {
+    const map = TOutlineStore.itemsById(store);
+    expect(map.size).toBe(1);
     expect(map.get(store.items[0].id)).toBe(store.items[0]);
   });
 
   it("childrenByParentId groups items by parentId sorted by order", () => {
     const firstId = store.items[0].id;
-    TStore.addAfter(store, firstId);
-    TStore.addAfter(store, firstId);
-    const children = TStore.childrenByParentId(store);
-    const roots = children.get(null) ?? [];
+    TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.addAfter(store, firstId);
+    const map = TOutlineStore.childrenByParentId(store);
+    const roots = map.get(null)!;
     expect(roots.length).toBe(3);
-    // Verify sorted by order
+    // verify sorted
     for (let i = 1; i < roots.length; i++) {
       expect(roots[i].order > roots[i - 1].order).toBe(true);
     }
@@ -138,53 +139,57 @@ describe("computed indexes", () => {
 describe("addAfter", () => {
   it("adds a sibling after the target item", () => {
     const firstId = store.items[0].id;
-    const newId = TStore.addAfter(store, firstId);
+    const newId = TOutlineStore.addAfter(store, firstId);
     expect(store.items.length).toBe(2);
-    expect(typeof newId).toBe("string");
-    const roots = TStore.childrenByParentId(store).get(null) ?? [];
+    expect(newId).toBeTruthy();
+    const map = TOutlineStore.childrenByParentId(store);
+    const roots = map.get(null)!;
     expect(roots[0].id).toBe(firstId);
     expect(roots[1].id).toBe(newId);
   });
 
-  it("inserts between two items with correct order", () => {
+  it("generates order between target and next sibling", () => {
     const firstId = store.items[0].id;
-    const secondId = TStore.addAfter(store, firstId);
-    const middleId = TStore.addAfter(store, firstId);
-    const roots = TStore.childrenByParentId(store).get(null) ?? [];
-    expect(roots.map((r) => r.id)).toEqual([firstId, middleId, secondId]);
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    const thirdId = TOutlineStore.addAfter(store, firstId);
+    // third should be between first and second
+    const map = TOutlineStore.childrenByParentId(store);
+    const roots = map.get(null)!;
+    expect(roots[0].id).toBe(firstId);
+    expect(roots[1].id).toBe(thirdId);
+    expect(roots[2].id).toBe(secondId);
   });
 });
 
 describe("removeItem", () => {
-  it("removes an item", () => {
+  it("removes an item and its descendants", () => {
     const firstId = store.items[0].id;
-    const secondId = TStore.addAfter(store, firstId);
-    TStore.removeItem(store, secondId);
-    expect(store.items.length).toBe(1);
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, secondId);
+    TOutlineStore.removeItem(store, firstId);
+    expect(store.items.length).toBe(0);
   });
 
-  it("removes descendants", () => {
+  it("returns previous sibling id for focus", () => {
     const firstId = store.items[0].id;
-    TStore.addAfter(store, firstId);
-    const secondId = (TStore.childrenByParentId(store).get(null) ?? [])[1].id;
-    TStore.indentItem(store, secondId);
-    TStore.removeItem(store, firstId);
-    expect(store.items.length).toBe(0);
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    const focusId = TOutlineStore.removeItem(store, secondId);
+    expect(focusId).toBe(firstId);
   });
 });
 
 describe("indentItem", () => {
   it("makes item a child of its previous sibling", () => {
     const firstId = store.items[0].id;
-    const secondId = TStore.addAfter(store, firstId);
-    TStore.indentItem(store, secondId);
-    const item = TStore.itemsById(store).get(secondId)!;
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, secondId);
+    const item = TOutlineStore.itemsById(store).get(secondId)!;
     expect(item.parentId).toBe(firstId);
   });
 
   it("does nothing if item is first sibling", () => {
     const firstId = store.items[0].id;
-    TStore.indentItem(store, firstId);
+    TOutlineStore.indentItem(store, firstId);
     expect(store.items[0].parentId).toBe(null);
   });
 });
@@ -192,47 +197,66 @@ describe("indentItem", () => {
 describe("outdentItem", () => {
   it("moves item to parent's level after parent", () => {
     const firstId = store.items[0].id;
-    const secondId = TStore.addAfter(store, firstId);
-    TStore.indentItem(store, secondId);
-    TStore.outdentItem(store, secondId);
-    const item = TStore.itemsById(store).get(secondId)!;
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, secondId);
+    TOutlineStore.outdentItem(store, secondId);
+    const item = TOutlineStore.itemsById(store).get(secondId)!;
     expect(item.parentId).toBe(null);
-    const roots = TStore.childrenByParentId(store).get(null) ?? [];
-    expect(roots[1].id).toBe(secondId);
+  });
+
+  it("does nothing if item is at root", () => {
+    const firstId = store.items[0].id;
+    TOutlineStore.outdentItem(store, firstId);
+    expect(store.items[0].parentId).toBe(null);
   });
 });
 
 describe("moveItemUp / moveItemDown", () => {
-  it("reorders siblings", () => {
+  it("moveItemUp swaps with previous sibling", () => {
     const firstId = store.items[0].id;
-    TStore.addAfter(store, firstId);
-    TStore.addAfter(store, firstId);
-    const roots = TStore.childrenByParentId(store).get(null) ?? [];
-    const thirdId = roots[2].id;
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.moveItemUp(store, secondId);
+    const roots = TOutlineStore.childrenByParentId(store).get(null)!;
+    expect(roots[0].id).toBe(secondId);
+    expect(roots[1].id).toBe(firstId);
+  });
 
-    TStore.moveItemUp(store, thirdId);
-    const newRoots = TStore.childrenByParentId(store).get(null) ?? [];
-    expect(newRoots[1].id).toBe(thirdId);
+  it("moveItemDown swaps with next sibling", () => {
+    const firstId = store.items[0].id;
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.moveItemDown(store, firstId);
+    const roots = TOutlineStore.childrenByParentId(store).get(null)!;
+    expect(roots[0].id).toBe(secondId);
+    expect(roots[1].id).toBe(firstId);
   });
 });
 
 describe("toggleCollapse", () => {
-  it("toggles item in collapsedIds", () => {
+  it("adds and removes from collapsedIds", () => {
     const firstId = store.items[0].id;
-    expect(store.collapsedIds.includes(firstId)).toBe(false);
-    TStore.toggleCollapse(store, firstId);
-    expect(store.collapsedIds.includes(firstId)).toBe(true);
-    TStore.toggleCollapse(store, firstId);
-    expect(store.collapsedIds.includes(firstId)).toBe(false);
+    expect(store.collapsedIds.length).toBe(0);
+    TOutlineStore.toggleCollapse(store, firstId);
+    expect(store.collapsedIds).toContain(firstId);
+    TOutlineStore.toggleCollapse(store, firstId);
+    expect(store.collapsedIds).not.toContain(firstId);
+  });
+});
+
+describe("isCollapsed", () => {
+  it("returns true if item is in collapsedIds", () => {
+    const firstId = store.items[0].id;
+    expect(TOutlineStore.isCollapsed(store, firstId)).toBe(false);
+    TOutlineStore.toggleCollapse(store, firstId);
+    expect(TOutlineStore.isCollapsed(store, firstId)).toBe(true);
   });
 });
 
 describe("zoom", () => {
   it("sets and clears zoomId", () => {
     const firstId = store.items[0].id;
-    TStore.zoom(store, firstId);
+    TOutlineStore.zoom(store, firstId);
     expect(store.zoomId).toBe(firstId);
-    TStore.zoom(store, null);
+    TOutlineStore.zoom(store, null);
     expect(store.zoomId).toBe(null);
   });
 });
@@ -240,22 +264,22 @@ describe("zoom", () => {
 describe("setContent", () => {
   it("updates item content", () => {
     const firstId = store.items[0].id;
-    TStore.setContent(store, firstId, "hello");
+    TOutlineStore.setContent(store, firstId, "hello");
     expect(store.items[0].content).toBe("hello");
   });
 });
 
 describe("getBreadcrumbs", () => {
   it("returns Home when not zoomed", () => {
-    const crumbs = TStore.getBreadcrumbs(store);
+    const crumbs = TOutlineStore.getBreadcrumbs(store);
     expect(crumbs).toEqual([{ id: null, label: "Home" }]);
   });
 
   it("returns path when zoomed", () => {
     const firstId = store.items[0].id;
-    TStore.setContent(store, firstId, "Projects");
-    TStore.zoom(store, firstId);
-    const crumbs = TStore.getBreadcrumbs(store);
+    TOutlineStore.setContent(store, firstId, "Projects");
+    TOutlineStore.zoom(store, firstId);
+    const crumbs = TOutlineStore.getBreadcrumbs(store);
     expect(crumbs.length).toBe(2);
     expect(crumbs[0]).toEqual({ id: null, label: "Home" });
     expect(crumbs[1]).toEqual({ id: firstId, label: "Projects" });
@@ -269,7 +293,7 @@ describe("getBreadcrumbs", () => {
 pnpm test
 ```
 
-Expected: FAIL (module doesn't exist)
+Expected: All tests FAIL
 
 - [ ] **Step 3: Implement OutlineStore**
 
@@ -303,7 +327,7 @@ function genId(): string {
 
 // --- Node type ---
 
-export const TStore = nodeType<OutlineStore>()
+export const TOutlineStore = nodeType<OutlineStore>()
   .getters({
     itemsById(): Map<string, OutlineItem> {
       const map = new Map<string, OutlineItem>();
@@ -317,23 +341,31 @@ export const TStore = nodeType<OutlineStore>()
       const map = new Map<string | null, OutlineItem[]>();
       for (const item of this.items) {
         const key = item.parentId;
-        let group = map.get(key);
-        if (!group) {
-          group = [];
-          map.set(key, group);
+        let list = map.get(key);
+        if (!list) {
+          list = [];
+          map.set(key, list);
         }
-        group.push(item);
+        list.push(item);
       }
-      for (const group of map.values()) {
-        group.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      for (const list of map.values()) {
+        list.sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
       }
       return map;
     },
 
     getChildren(parentId: string | null): OutlineItem[] {
-      return this.items
-        .filter((i) => i.parentId === parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      return this.childrenByParentId.get(parentId) ?? [];
+    },
+
+    getSiblings(itemId: string): OutlineItem[] {
+      const item = this.itemsById.get(itemId);
+      if (!item) return [];
+      return this.childrenByParentId.get(item.parentId) ?? [];
+    },
+
+    isCollapsed(itemId: string): boolean {
+      return this.collapsedIds.includes(itemId);
     },
 
     getBreadcrumbs(): { id: string | null; label: string }[] {
@@ -343,11 +375,11 @@ export const TStore = nodeType<OutlineStore>()
       if (!this.zoomId) return crumbs;
 
       const path: OutlineItem[] = [];
-      let current = this.items.find((i) => i.id === this.zoomId);
+      let current = this.itemsById.get(this.zoomId);
       while (current) {
         path.unshift(current);
         current = current.parentId
-          ? this.items.find((i) => i.id === current!.parentId)
+          ? this.itemsById.get(current.parentId)
           : undefined;
       }
       for (const item of path) {
@@ -358,30 +390,23 @@ export const TStore = nodeType<OutlineStore>()
 
     getZoomTitle(): string {
       if (!this.zoomId) return "Home";
-      const item = this.items.find((i) => i.id === this.zoomId);
+      const item = this.itemsById.get(this.zoomId);
       return item?.content || "(empty)";
-    },
-
-    isCollapsed(itemId: string): boolean {
-      return this.collapsedIds.includes(itemId);
     },
   })
   .actions({
     setContent(itemId: string, content: string) {
-      const item = this.items.find((i) => i.id === itemId);
+      const item = this.itemsById.get(itemId);
       if (item) item.content = content;
     },
 
     addAfter(afterId: string): string {
-      const target = this.items.find((i) => i.id === afterId);
+      const target = this.itemsById.get(afterId);
       if (!target) return "";
 
-      const siblings = this.items
-        .filter((i) => i.parentId === target.parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const siblings = this.getChildren(target.parentId);
       const idx = siblings.findIndex((s) => s.id === afterId);
       const nextSibling = siblings[idx + 1];
-
       const newOrder = generateKeyBetween(
         target.order,
         nextSibling?.order ?? null
@@ -397,43 +422,53 @@ export const TStore = nodeType<OutlineStore>()
       return newItem.id;
     },
 
-    removeItem(itemId: string) {
+    removeItem(itemId: string): string | null {
+      const item = this.itemsById.get(itemId);
+      if (!item) return null;
+
+      // Determine focus target before removal
+      const siblings = this.getChildren(item.parentId);
+      const idx = siblings.findIndex((s) => s.id === itemId);
+      const focusTarget = idx > 0 ? siblings[idx - 1].id : item.parentId;
+
+      // Collect all descendant IDs
       const idsToRemove = new Set<string>();
       const collectIds = (id: string) => {
         idsToRemove.add(id);
-        this.items
-          .filter((i) => i.parentId === id)
-          .forEach((i) => collectIds(i.id));
+        const children = this.getChildren(id);
+        for (const child of children) {
+          collectIds(child.id);
+        }
       };
       collectIds(itemId);
 
+      // Remove from end to avoid index shifting
       for (let i = this.items.length - 1; i >= 0; i--) {
         if (idsToRemove.has(this.items[i].id)) {
           this.items.splice(i, 1);
         }
       }
 
-      // Remove from collapsedIds too
-      for (const id of idsToRemove) {
-        const idx = this.collapsedIds.indexOf(id);
-        if (idx >= 0) this.collapsedIds.splice(idx, 1);
+      // Clean up collapsedIds
+      for (let i = this.collapsedIds.length - 1; i >= 0; i--) {
+        if (idsToRemove.has(this.collapsedIds[i])) {
+          this.collapsedIds.splice(i, 1);
+        }
       }
+
+      return focusTarget;
     },
 
     indentItem(itemId: string) {
-      const item = this.items.find((i) => i.id === itemId);
+      const item = this.itemsById.get(itemId);
       if (!item) return;
 
-      const siblings = this.items
-        .filter((i) => i.parentId === item.parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const siblings = this.getChildren(item.parentId);
       const idx = siblings.findIndex((s) => s.id === itemId);
       if (idx === 0) return;
 
       const newParentId = siblings[idx - 1].id;
-      const newSiblings = this.items
-        .filter((i) => i.parentId === newParentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const newSiblings = this.getChildren(newParentId);
       const lastChild = newSiblings[newSiblings.length - 1];
 
       item.parentId = newParentId;
@@ -441,32 +476,28 @@ export const TStore = nodeType<OutlineStore>()
     },
 
     outdentItem(itemId: string) {
-      const item = this.items.find((i) => i.id === itemId);
+      const item = this.itemsById.get(itemId);
       if (!item || item.parentId === null) return;
 
-      const parent = this.items.find((i) => i.id === item.parentId);
+      const parent = this.itemsById.get(item.parentId);
       if (!parent) return;
 
-      const parentSiblings = this.items
-        .filter((i) => i.parentId === parent.parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const parentSiblings = this.getChildren(parent.parentId);
       const parentIdx = parentSiblings.findIndex((s) => s.id === parent.id);
-      const nextUncle = parentSiblings[parentIdx + 1];
+      const nextAfterParent = parentSiblings[parentIdx + 1];
 
       item.parentId = parent.parentId;
       item.order = generateKeyBetween(
         parent.order,
-        nextUncle?.order ?? null
+        nextAfterParent?.order ?? null
       );
     },
 
     moveItemUp(itemId: string) {
-      const item = this.items.find((i) => i.id === itemId);
+      const item = this.itemsById.get(itemId);
       if (!item) return;
 
-      const siblings = this.items
-        .filter((i) => i.parentId === item.parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const siblings = this.getChildren(item.parentId);
       const idx = siblings.findIndex((s) => s.id === itemId);
       if (idx === 0) return;
 
@@ -480,12 +511,10 @@ export const TStore = nodeType<OutlineStore>()
     },
 
     moveItemDown(itemId: string) {
-      const item = this.items.find((i) => i.id === itemId);
+      const item = this.itemsById.get(itemId);
       if (!item) return;
 
-      const siblings = this.items
-        .filter((i) => i.parentId === item.parentId)
-        .sort((a, b) => (a.order < b.order ? -1 : a.order > b.order ? 1 : 0));
+      const siblings = this.getChildren(item.parentId);
       const idx = siblings.findIndex((s) => s.id === itemId);
       if (idx === siblings.length - 1) return;
 
@@ -514,39 +543,23 @@ export const TStore = nodeType<OutlineStore>()
 
 // --- Factory ---
 
-const STORAGE_KEY = "zen-outliner-data";
-
-export function createStore(loadFromStorage = false): OutlineStore {
-  let data: OutlineStore;
-
-  if (loadFromStorage) {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        data = JSON.parse(raw);
-        return node(data);
-      }
-    } catch {
-      // fall through to default
-    }
-  }
-
-  data = {
-    items: [{
-      id: genId(),
-      parentId: null,
-      content: "",
-      order: generateKeyBetween(null, null),
-    }],
+export function createStore(): OutlineStore {
+  return node<OutlineStore>({
+    items: [
+      {
+        id: genId(),
+        parentId: null,
+        content: "",
+        order: generateKeyBetween(null, null),
+      },
+    ],
     collapsedIds: [],
     zoomId: null,
-  };
-
-  return node(data);
+  });
 }
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
 pnpm test
@@ -557,18 +570,17 @@ Expected: All tests PASS
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/models/
-git commit -m "feat: add OutlineStore with mobx-bonsai, fractional indexing, computed indexes"
+git add src/models/ && git commit -m "feat: add OutlineStore with mobx-bonsai + fractional indexing"
 ```
 
 ---
 
-### Task 3: OutlineNode component
+### Task 3: OutlineNode component (observer)
 
 **Files:**
 - Create: `src/components/OutlineNode.tsx`
 
-- [ ] **Step 1: Create the component**
+- [ ] **Step 1: Create the node component**
 
 Create `src/components/OutlineNode.tsx`:
 
@@ -576,9 +588,9 @@ Create `src/components/OutlineNode.tsx`:
 import { useRef, useEffect, KeyboardEvent } from "react";
 import { observer } from "mobx-react-lite";
 import type { OutlineItem, OutlineStore } from "../models/OutlineStore";
-import { TStore } from "../models/OutlineStore";
+import { TOutlineStore } from "../models/OutlineStore";
 
-interface Props {
+interface OutlineNodeProps {
   item: OutlineItem;
   store: OutlineStore;
   focusId: string | null;
@@ -592,11 +604,11 @@ const OutlineNode = observer(function OutlineNode({
   focusId,
   onFocused,
   onRequestFocus,
-}: Props) {
+}: OutlineNodeProps) {
   const inputRef = useRef<HTMLDivElement>(null);
-  const children = TStore.getChildren(store, item.id);
+  const children = TOutlineStore.getChildren(store, item.id);
   const hasChildren = children.length > 0;
-  const isCollapsed = TStore.isCollapsed(store, item.id) && hasChildren;
+  const isCollapsed = TOutlineStore.isCollapsed(store, item.id);
 
   useEffect(() => {
     if (focusId === item.id && inputRef.current) {
@@ -616,59 +628,54 @@ const OutlineNode = observer(function OutlineNode({
   const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      const newId = TStore.addAfter(store, item.id);
+      const newId = TOutlineStore.addAfter(store, item.id);
       if (newId) onRequestFocus(newId);
     } else if (e.key === "Tab" && !e.shiftKey) {
       e.preventDefault();
-      TStore.indentItem(store, item.id);
+      TOutlineStore.indentItem(store, item.id);
       onRequestFocus(item.id);
     } else if (e.key === "Tab" && e.shiftKey) {
       e.preventDefault();
-      TStore.outdentItem(store, item.id);
+      TOutlineStore.outdentItem(store, item.id);
       onRequestFocus(item.id);
     } else if (e.key === "Backspace" && item.content === "") {
       e.preventDefault();
-      const siblings = TStore.getChildren(store, item.parentId);
-      const idx = siblings.findIndex((s) => s.id === item.id);
-      const focusTarget = idx > 0 ? siblings[idx - 1].id : item.parentId;
-      TStore.removeItem(store, item.id);
+      const focusTarget = TOutlineStore.removeItem(store, item.id);
       if (focusTarget) onRequestFocus(focusTarget);
     } else if (e.key === "ArrowUp" && e.ctrlKey) {
       e.preventDefault();
-      TStore.moveItemUp(store, item.id);
+      TOutlineStore.moveItemUp(store, item.id);
       onRequestFocus(item.id);
     } else if (e.key === "ArrowDown" && e.ctrlKey) {
       e.preventDefault();
-      TStore.moveItemDown(store, item.id);
+      TOutlineStore.moveItemDown(store, item.id);
       onRequestFocus(item.id);
     } else if (e.key === "ArrowUp" && !e.ctrlKey) {
       e.preventDefault();
       const all = document.querySelectorAll<HTMLDivElement>("[contenteditable]");
-      const arr = Array.from(all);
-      const idx = arr.indexOf(inputRef.current!);
-      if (idx > 0) arr[idx - 1].focus();
+      const idx = Array.from(all).indexOf(inputRef.current!);
+      if (idx > 0) (all[idx - 1] as HTMLDivElement).focus();
     } else if (e.key === "ArrowDown" && !e.ctrlKey) {
       e.preventDefault();
       const all = document.querySelectorAll<HTMLDivElement>("[contenteditable]");
-      const arr = Array.from(all);
-      const idx = arr.indexOf(inputRef.current!);
-      if (idx < arr.length - 1) arr[idx + 1].focus();
+      const idx = Array.from(all).indexOf(inputRef.current!);
+      if (idx < all.length - 1) (all[idx + 1] as HTMLDivElement).focus();
     }
   };
 
   const handleInput = () => {
     if (inputRef.current) {
-      TStore.setContent(store, item.id, inputRef.current.textContent || "");
+      TOutlineStore.setContent(store, item.id, inputRef.current.textContent || "");
     }
   };
 
   const handleBulletClick = () => {
-    if (hasChildren) TStore.zoom(store, item.id);
+    if (hasChildren) TOutlineStore.zoom(store, item.id);
   };
 
   const handleTriangleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (hasChildren) TStore.toggleCollapse(store, item.id);
+    if (hasChildren) TOutlineStore.toggleCollapse(store, item.id);
   };
 
   return (
@@ -743,17 +750,17 @@ pnpm exec tsc --noEmit
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/components/OutlineNode.tsx
-git commit -m "feat: add OutlineNode component with observer + keyboard handling"
+git add src/components/OutlineNode.tsx && git commit -m "feat: add OutlineNode component with observer + keyboard handling"
 ```
 
 ---
 
-### Task 4: OutlineTree + Breadcrumb components
+### Task 4: OutlineTree + Breadcrumb + App wiring
 
 **Files:**
 - Create: `src/components/OutlineTree.tsx`
 - Create: `src/components/Breadcrumb.tsx`
+- Modify: `src/App.tsx`
 
 - [ ] **Step 1: Create OutlineTree**
 
@@ -762,10 +769,10 @@ Create `src/components/OutlineTree.tsx`:
 ```tsx
 import { observer } from "mobx-react-lite";
 import type { OutlineStore } from "../models/OutlineStore";
-import { TStore } from "../models/OutlineStore";
+import { TOutlineStore } from "../models/OutlineStore";
 import OutlineNode from "./OutlineNode";
 
-interface Props {
+interface OutlineTreeProps {
   store: OutlineStore;
   focusId: string | null;
   onFocused: () => void;
@@ -777,9 +784,9 @@ const OutlineTree = observer(function OutlineTree({
   focusId,
   onFocused,
   onRequestFocus,
-}: Props) {
+}: OutlineTreeProps) {
   const parentId = store.zoomId;
-  const items = TStore.getChildren(store, parentId);
+  const items = TOutlineStore.getChildren(store, parentId);
 
   if (items.length === 0) {
     return (
@@ -815,14 +822,14 @@ Create `src/components/Breadcrumb.tsx`:
 ```tsx
 import { observer } from "mobx-react-lite";
 import type { OutlineStore } from "../models/OutlineStore";
-import { TStore } from "../models/OutlineStore";
+import { TOutlineStore } from "../models/OutlineStore";
 
-interface Props {
+interface BreadcrumbProps {
   store: OutlineStore;
 }
 
-const Breadcrumb = observer(function Breadcrumb({ store }: Props) {
-  const items = TStore.getBreadcrumbs(store);
+const Breadcrumb = observer(function Breadcrumb({ store }: BreadcrumbProps) {
+  const items = TOutlineStore.getBreadcrumbs(store);
 
   return (
     <div className="flex items-center gap-2 px-8 py-3.5 border-b border-[var(--border-color)]">
@@ -833,7 +840,7 @@ const Breadcrumb = observer(function Breadcrumb({ store }: Props) {
           )}
           {i < items.length - 1 ? (
             <button
-              onClick={() => TStore.zoom(store, item.id)}
+              onClick={() => TOutlineStore.zoom(store, item.id)}
               className="text-[var(--text-muted)] text-sm hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
             >
               {item.label}
@@ -852,36 +859,29 @@ const Breadcrumb = observer(function Breadcrumb({ store }: Props) {
 export default Breadcrumb;
 ```
 
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/components/OutlineTree.tsx src/components/Breadcrumb.tsx
-git commit -m "feat: add OutlineTree and Breadcrumb components"
-```
-
----
-
-### Task 5: Wire everything in App.tsx
-
-**Files:**
-- Modify: `src/App.tsx`
-
-- [ ] **Step 1: Replace App.tsx**
+- [ ] **Step 3: Wire App.tsx**
 
 Replace `src/App.tsx`:
 
 ```tsx
 import { useState, useCallback } from "react";
 import { observer } from "mobx-react-lite";
-import { onSnapshot } from "mobx-bonsai";
-import { createStore, TStore } from "./models/OutlineStore";
+import { getSnapshot, onSnapshot } from "mobx-bonsai";
+import { createStore, TOutlineStore } from "./models/OutlineStore";
+import type { OutlineStore } from "./models/OutlineStore";
 import Breadcrumb from "./components/Breadcrumb";
 import OutlineTree from "./components/OutlineTree";
 
 const STORAGE_KEY = "zen-outliner-data";
 
-const store = createStore(true);
+function loadStore(): OutlineStore {
+  // TODO: load from localStorage when persistence is wired
+  return createStore();
+}
 
+const store = loadStore();
+
+// Auto-save to localStorage
 onSnapshot(store, (snapshot) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
 });
@@ -889,7 +889,7 @@ onSnapshot(store, (snapshot) => {
 const App = observer(function App() {
   const [focusId, setFocusId] = useState<string | null>(null);
   const clearFocus = useCallback(() => setFocusId(null), []);
-  const zoomTitle = TStore.getZoomTitle(store);
+  const zoomTitle = TOutlineStore.getZoomTitle(store);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--bg-primary)" }}>
@@ -912,26 +912,15 @@ const App = observer(function App() {
 export default App;
 ```
 
-- [ ] **Step 2: Verify it runs**
+- [ ] **Step 4: Run the app**
 
 ```bash
 pnpm dev
 ```
 
-Expected: Working outliner at http://localhost:5173
+Expected: Dark page, one empty node, keyboard shortcuts work.
 
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/App.tsx
-git commit -m "feat: wire up outliner with mobx-bonsai store and persistence"
-```
-
----
-
-### Task 6: Smoke test
-
-- [ ] **Step 1: Run all tests**
+- [ ] **Step 5: Run tests**
 
 ```bash
 pnpm test
@@ -939,25 +928,35 @@ pnpm test
 
 Expected: All store tests pass.
 
-- [ ] **Step 2: Manual smoke test**
+- [ ] **Step 6: Commit**
 
+```bash
+git add -A && git commit -m "feat: wire up full outliner with mobx-bonsai store"
+```
+
+---
+
+### Task 5: Smoke test and verify
+
+- [ ] **Step 1: Manual smoke test**
+
+Open http://localhost:5173 and verify:
 1. Empty state shows placeholder
 2. Type text → content saves
 3. Enter → new node below
-4. Tab → indent
-5. Shift+Tab → outdent
-6. Backspace on empty → delete
-7. Ctrl+↑/↓ → reorder
-8. ↑/↓ → move focus
-9. Click bullet → zoom in
-10. Breadcrumb → zoom out
-11. Collapsed ring on collapsed parent nodes
+4. Tab → indents under previous sibling
+5. Shift+Tab → outdents
+6. Backspace on empty → deletes node
+7. Ctrl+↑/↓ → reorders
+8. ↑/↓ → moves focus
+9. Click bullet → zooms into node
+10. Breadcrumb → zooms out
+11. Collapsed ring on nodes with hidden children
 12. Hover triangle on parent nodes
-13. Refresh → data persists
+13. Refresh page → check if data shows (persistence not loaded yet, just saved)
 
-- [ ] **Step 3: Final commit**
+- [ ] **Step 2: Final commit**
 
 ```bash
-git add -A
-git commit -m "feat: zen-outliner v1 complete"
+git add -A && git commit -m "feat: zen-outliner v1 — working Workflowy clone"
 ```
