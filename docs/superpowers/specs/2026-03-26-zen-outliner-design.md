@@ -11,33 +11,35 @@ Multiple root-level items (Workflowy-style). No multiple lists in v1.
 
 ## Interaction Model
 
-Three modes (v1 implements first two):
+A node can be selected, and separately, edited.
 
-Normal mode (default on page load):
-  Vim-style single-key commands. j/k navigate, dd delete, Tab indent.
-  contentEditable is present on every node but keyboard handler
-  intercepts all keys via preventDefault(). Nothing is editable.
+Selected state:
+  One node is "selected" at a time. Visually highlighted.
+  Keyboard commands act on the selected node: indent, outdent,
+  delete, move up/down, collapse, zoom. Single-key shortcuts
+  work here (j/k navigate, dd delete, Tab indent, etc.)
 
-Insert mode (press i, or click into node text):
-  Workflowy-like flowing text. Type freely in the focused node.
-  contentEditable receives keystrokes. Enter splits node at cursor.
-  Backspace at start merges with previous node. Arrow keys at
-  boundaries flow to adjacent nodes seamlessly. Only one node is
-  "active" at a time but the transition between nodes is invisible.
-  Esc returns to normal mode.
+Editing state:
+  The selected node's text is being edited. Activated by shortcut
+  or clicking the node text. The text input area is visually
+  prominent. contentEditable receives keystrokes. Enter splits
+  node at cursor. Backspace at start merges with previous node.
+  Arrow keys at boundaries flow to adjacent nodes seamlessly.
+  Esc stops editing, node stays selected.
 
-Visual mode (future, not v1):
-  Multi-node item selection. Triggered by selection gesture.
-  Item-level operations (move, delete, indent group).
+Multi-select (future, not v1):
+  Item-level selection of multiple nodes. Triggered by selection
+  gesture. Batch operations (move, delete, indent group).
 
 Technical approach:
   contentEditable attribute is on every node div, always.
-  Mode flag in store controls keyboard handler behavior.
-  In normal mode: preventDefault() on all text keys.
-  In insert mode: let keys through to contentEditable.
+  Editing flag controls keyboard handler behavior.
+  When not editing: preventDefault() on text keys, process
+  structural commands.
+  When editing: let keys through to contentEditable.
   No rich text library needed. Content stored as plain strings.
   Rich text (WYSIWYG or markdown) is a v2 component-level change
-  that does not affect store, model, or mode architecture.
+  that does not affect store, model, or architecture.
 
 ## Stack
 
