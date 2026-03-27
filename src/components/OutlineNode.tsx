@@ -24,20 +24,21 @@ const OutlineNode = observer(function OutlineNode({
   onStopEditing,
   onRequestFocus,
 }: Props) {
-  const inputRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const children = TOutlineStore.getChildren(store, item.id);
   const hasChildren = children.length > 0;
   const isCollapsed = TOutlineStore.isCollapsed(store, item.id);
   const isSelected = selectedId === item.id;
   const isEditing = editingId === item.id;
 
+  // Focus and cursor positioning when entering editing state
   useEffect(() => {
     if (isEditing && inputRef.current) {
       inputRef.current.focus();
     }
   }, [isEditing]);
 
-  const handleClick = () => {
+  const handleRowClick = () => {
     onSelect(item.id);
     onStartEditing(item.id);
   };
@@ -57,15 +58,11 @@ const OutlineNode = observer(function OutlineNode({
     }
   };
 
-  const handleInput = () => {
-    if (inputRef.current) {
-      TOutlineStore.setContent(store, item.id, inputRef.current.textContent || "");
-    }
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    TOutlineStore.setContent(store, item.id, e.target.value);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!isEditing) return;
-
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") {
       e.preventDefault();
       onStopEditing();
@@ -74,8 +71,7 @@ const OutlineNode = observer(function OutlineNode({
 
     if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
-      const sel = window.getSelection();
-      const cursorPos = sel?.focusOffset ?? item.content.length;
+      const cursorPos = inputRef.current?.selectionStart ?? item.content.length;
       if (cursorPos === item.content.length) {
         const newId = TOutlineStore.addAfter(store, item.id);
         if (newId) {
@@ -107,8 +103,8 @@ const OutlineNode = observer(function OutlineNode({
         }
         return;
       }
-      const sel = window.getSelection();
-      if (sel && sel.focusOffset === 0 && sel.isCollapsed) {
+      const cursorPos = inputRef.current?.selectionStart ?? 1;
+      if (cursorPos === 0) {
         e.preventDefault();
         const result = TOutlineStore.mergeWithPrevious(store, item.id);
         if (result) {
@@ -184,9 +180,10 @@ const OutlineNode = observer(function OutlineNode({
       return;
     }
 
+    // Arrow up at start of input → flow to previous node
     if (e.key === "ArrowUp" && !e.ctrlKey && !e.altKey) {
-      const sel = window.getSelection();
-      if (sel && sel.focusOffset === 0 && sel.isCollapsed) {
+      const cursorPos = inputRef.current?.selectionStart ?? 1;
+      if (cursorPos === 0) {
         e.preventDefault();
         const visible = TOutlineStore.getVisibleNodes(store);
         const idx = visible.findIndex((n) => n.id === item.id);
@@ -199,10 +196,10 @@ const OutlineNode = observer(function OutlineNode({
       }
     }
 
+    // Arrow down at end of input → flow to next node
     if (e.key === "ArrowDown" && !e.ctrlKey && !e.altKey) {
-      const sel = window.getSelection();
-      const atEnd = sel && sel.focusOffset === (inputRef.current?.textContent?.length ?? 0) && sel.isCollapsed;
-      if (atEnd) {
+      const cursorPos = inputRef.current?.selectionStart ?? 0;
+      if (cursorPos === item.content.length) {
         e.preventDefault();
         const visible = TOutlineStore.getVisibleNodes(store);
         const idx = visible.findIndex((n) => n.id === item.id);
@@ -222,7 +219,7 @@ const OutlineNode = observer(function OutlineNode({
         className={`group flex items-center py-1.5 relative cursor-pointer ${
           isSelected ? "bg-[var(--bg-hover)]" : ""
         }`}
-        onClick={handleClick}
+        onClick={handleRowClick}
       >
         {hasChildren && (
           <button
@@ -250,19 +247,23 @@ const OutlineNode = observer(function OutlineNode({
           />
         </button>
 
-        <div
-          ref={inputRef}
-          contentEditable
-          suppressContentEditableWarning
-          onInput={handleInput}
-          onKeyDown={handleKeyDown}
-          onFocus={() => { onSelect(item.id); onStartEditing(item.id); }}
-          className={`flex-1 ml-2.5 text-base leading-relaxed outline-none text-[var(--text-secondary)] ${
-            isEditing ? "bg-[rgba(255,255,255,0.03)]" : ""
-          }`}
-        >
-          {item.content}
-        </div>
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={item.content}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            className="flex-1 ml-2.5 text-base leading-relaxed outline-none bg-[rgba(255,255,255,0.03)] text-[var(--text-secondary)] border-none px-1 py-0"
+          />
+        ) : (
+          <span
+            className="flex-1 ml-2.5 text-base leading-relaxed text-[var(--text-secondary)]"
+            onClick={handleRowClick}
+          >
+            {item.content || "\u00A0"}
+          </span>
+        )}
       </div>
 
       {hasChildren && !isCollapsed && (
