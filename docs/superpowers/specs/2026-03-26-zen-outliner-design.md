@@ -3,8 +3,10 @@
 ## What
 
 An outliner inspired by Workflowy and Checkvist. Dark mode only.
-Checkvist-style modal editing (normal/insert modes) with Workflowy-feel
-flowing text in insert mode. Plain text only, no rich text in v1.
+Checkvist interaction model (modal editing, normal/insert modes) with
+Workflowy visual design (minimal, dark, content is the interface).
+Workflowy-feel flowing text in insert mode. Plain text only, no rich text in v1.
+Multiple root-level items (Workflowy-style). No multiple lists in v1.
 
 
 ## Interaction Model
