@@ -3,10 +3,9 @@
 ## What
 
 An outliner inspired by Workflowy and Checkvist. Dark mode only.
-Checkvist interaction model (modal editing, normal/insert modes) with
-Workflowy visual design (minimal, dark, content is the interface).
-Workflowy-feel flowing text in insert mode. Plain text only, no rich text in v1.
-Multiple root-level items (Workflowy-style). No multiple lists in v1.
+Checkvist interaction model with Workflowy visual design (minimal, dark,
+content is the interface). Flowing text while editing. Plain text only,
+no rich text in v1. Multiple root-level items. No multiple lists in v1.
 
 
 ## Interaction Model
@@ -16,8 +15,7 @@ A node can be selected, and separately, edited.
 Selected state:
   One node is "selected" at a time. Visually highlighted.
   Keyboard commands act on the selected node: indent, outdent,
-  delete, move up/down, collapse, zoom. Single-key shortcuts
-  work here (j/k navigate, dd delete, Tab indent, etc.)
+  delete, move up/down, collapse. Single-key shortcuts work here.
 
 Editing state:
   The selected node's text is being edited. Activated by shortcut
@@ -41,107 +39,55 @@ Technical approach:
   Rich text (WYSIWYG or markdown) is a v2 component-level change
   that does not affect store, model, or architecture.
 
+
 ## Stack
 
-- React + TypeScript + Vite
-- Tailwind CSS (dark mode only)
-- mobx-bonsai + mobx-react-lite (state, snapshots, future undo)
-- fractional-indexing (string-based ordering)
-- localStorage (JSON) for persistence
-- No auth, no backend, no Supabase (for now)
-- SPA — single page application
+1. React + TypeScript + Vite
+2. Tailwind CSS (dark mode only)
+3. mobx-bonsai + mobx-react-lite (state, snapshots, future undo)
+4. fractional-indexing (string-based ordering)
+5. localStorage (JSON) for persistence
+6. No auth, no backend, no Supabase (for now)
+7. SPA — single page application
+
 
 ## Core Features (v1)
 
 1. Infinite nesting — nodes can nest arbitrarily deep
 2. Expand / collapse any node with children
-3. Zoom into any node (click bullet or keyboard shortcut)
-4. Breadcrumb navigation to zoom back out
-5. Keyboard-driven (see Keyboard Shortcuts section below)
-6. localStorage persistence — auto-save on every change
+3. Keyboard-driven — shortcuts revisited per-feature during implementation
+4. localStorage persistence — auto-save on every change
 
 
-## Keyboard Shortcuts
+## Delete Behavior
 
-Full reference: docs/reference/workflowy-shortcuts.md (49 total Workflowy shortcuts)
+1. Delete a node deletes the node AND all its children
+2. Last remaining item cannot be deleted
+3. No promote-children variant in v1
+4. No undo in v1 — accepted risk
 
-Win keybindings shown. Mac substitutes Cmd for Ctrl, Alt for Cmd where noted.
-
-### v1 — include
-
-Core Editing:
-  Enter               new sibling below
-  Enter (mid-text)    split node at cursor — text after cursor becomes new sibling
-  Backspace (empty)   delete empty node, focus previous sibling
-  Backspace (start)   merge current node's text into previous sibling
-  Ctrl+Shift+Bksp     force-delete node + all children regardless of content
-
-Indentation:
-  Tab                 indent — make child of previous sibling
-  Alt+Shift+Right     indent (alternative binding)
-  Shift+Tab           outdent — move to parent's level after parent
-  Alt+Shift+Left      outdent (alternative binding)
-
-Reordering:
-  Alt+Shift+Up        move node up among siblings
-  Alt+Shift+Down      move node down among siblings
-
-Navigation:
-  Up arrow            move focus to previous visible node
-  Down arrow          move focus to next visible node
-  Alt+.               zoom into focused node (Alt+Right also works)
-  Alt+,               zoom out one level (Alt+Left also works)
-  Ctrl+'              zoom to home (root)
-
-Expand / Collapse:
-  Ctrl+Down           expand focused node
-  Ctrl+Up             collapse focused node
-
-### v1 — deprioritized (implement if time allows)
-
-Expand / Collapse:
-  Ctrl+Space           expand/collapse all siblings at same level
-  Ctrl+Space+Space     expand/collapse ALL children recursively
-
-Navigation:
-  Alt+Shift+9          jump to previous sibling's zoomed view
-  Alt+Shift+0          jump to next sibling's zoomed view
-
-System:
-  Ctrl+?               show keyboard shortcuts help panel
-
-### skip (not v1)
-
-  Undo/redo            needs own design cycle (see docs/reference/undo-redo-design-notes.md)
-  Rich text formatting no rich text in v1 (bold, italic, underline, strikethrough, code, highlight)
-  Notes (Shift+Enter)  adds model field
-  Complete (Ctrl+Enter) adds model field
-  Duplicate            new feature
-  Search / Jump-to     new subsystem
-  Multi-select         new subsystem
-  Copy link / Mirror   new features
-  Move To dialog       new feature
-  Sidebar toggle       no sidebar in v1
-  Star page            new feature
-  Print                browser handles natively
 
 ## Visual Design
 
-- Dark mode only (#1a1a1a background)
-- Workflowy-exact visual style — content IS the interface
-- Every node has a bullet dot (small filled circle)
-- Collapsed nodes: ring/circle around the bullet
-- Leaf nodes: slightly smaller, dimmer dot
-- Hover a parent node: collapse/expand triangle (▼/►) fades in to the LEFT of the bullet
-- Vertical connector lines run from parent through child bullets (same x-axis)
-- Centered content area (~700px max-width)
-- Spacious line height, generous padding
-- No sidebar in v1 (toggleable sidebar is a future feature)
-- No toolbar, no chrome — just the outline
+1. Dark mode only (#1a1a1a background)
+2. Workflowy-style — content IS the interface
+3. Every node has a bullet dot (small filled circle)
+4. Collapsed nodes: ring/circle around the bullet
+5. Leaf nodes: slightly smaller, dimmer dot
+6. Hover a parent node: collapse/expand triangle fades in to the LEFT of the bullet
+7. Vertical connector lines run from parent through child bullets (same x-axis)
+8. Centered content area (~700px max-width)
+9. Spacious line height, generous padding
+10. No sidebar in v1 (toggleable sidebar is a future feature)
+11. No toolbar, no chrome — just the outline
+12. Selected node: visually highlighted
+13. Editing node: text input visually prominent
+
 
 ## Empty State
 
-- Single empty node with blinking cursor and "Start typing..." placeholder
+Single empty node with placeholder text.
+
 
 ## Data Model
 
@@ -157,7 +103,6 @@ order:    string        — fractional index for sorting (string-based)
 ```
 items:        OutlineItem[]  — flat array, source of truth
 collapsedIds: string[]       — which items are collapsed (view state, NOT on items)
-zoomId:       string | null  — which item is zoomed into (view state)
 ```
 
 ### Computed indexes (derived, not stored)
@@ -167,24 +112,91 @@ childrenByParentId: Map<string | null, OutlineItem[]>  — O(1) children lookup,
 ```
 
 ### Key decisions
-- Flat array — mutations are single-field changes (parentId for indent/outdent, order for reorder)
-- No collapsed field on items — collapse is view state, not data. Keeps undo/redo clean, keeps Supabase schema clean.
-- Fractional indexing — insert between any two items without reindexing siblings
-- Computed indexes — MobX recalculates on mutation, caches until next change
-- Maps directly to Supabase rows when backend is added later
+1. Flat array — mutations are single-field changes (parentId for indent/outdent, order for reorder)
+2. No collapsed field on items — collapse is view state, not data. Keeps undo/redo clean, keeps Supabase schema clean.
+3. Fractional indexing — insert between any two items without reindexing siblings
+4. Computed indexes — MobX recalculates on mutation, caches until next change
+5. Maps directly to Supabase rows when backend is added later
 
-## Out of Scope (v1)
 
-1. Authentication / user accounts
-2. Supabase backend / sync
-3. Search / filter
-4. Sharing / collaboration
-5. Sidebar navigation
-6. Rich text / markdown in nodes
-7. Drag and drop reordering
-8. Undo / redo (needs own design cycle — see docs/reference/undo-redo-design-notes.md)
-9. Notes on nodes (Shift+Enter)
-10. Mark complete / strikethrough
-11. Duplicate node
-12. Multi-select
-13. Vim-like modal editing (reserved for v2)
+## Future / v2+
+
+Captured from brainstorming discussions. Not in v1 scope.
+
+1. Zoom into node — complex, intertwined with delete, navigation, undo. Collapse/expand sufficient for v1. Discussed during spec, deliberately deferred.
+2. Breadcrumb navigation — depends on zoom
+3. Undo / redo — needs own design cycle. Design notes captured at docs/reference/undo-redo-design-notes.md. collapsedIds separated from items specifically to keep undo surface clean.
+4. Persistence — auto-save via onSnapshot discussed but behavior not fully specified. Needs discussion: when saves fire, error handling, corrupt data recovery.
+5. Rich text / markdown — v2 component-level change in OutlineNode. Does not affect store, model, or architecture. Decision between WYSIWYG (TipTap/ProseMirror) and visible markdown (Checkvist-style) deferred.
+6. Vim-like modal editing — reserved for v2. Architecture supports it (editing flag + keyboard handler). Not a retrofit.
+7. Authentication / user accounts
+8. Supabase backend / sync
+9. Search / filter
+10. Sharing / collaboration
+11. Sidebar navigation (toggleable)
+12. Drag and drop reordering
+13. Notes on nodes (Shift+Enter) — adds model field
+14. Mark complete / strikethrough — adds model field
+15. Duplicate node
+16. Multi-select — item-level selection, batch operations, visual mode
+17. Multiple lists (Checkvist-style)
+
+
+# Reference — Keyboard Shortcuts
+
+Full Workflowy reference: docs/reference/workflowy-shortcuts.md (49 shortcuts)
+
+Shortcuts below are the v1 candidates. Exact bindings will be revisited
+per-feature during implementation.
+
+## v1 — include
+
+Core Editing:
+  Enter               new sibling below
+  Enter (mid-text)    split node at cursor — text after cursor becomes new sibling
+  Backspace (empty)   delete empty node, focus previous sibling
+  Backspace (start)   merge current node's text into previous sibling
+  Ctrl+Shift+Bksp     force-delete node + all children regardless of content
+
+Indentation:
+  Tab                 indent — make child of previous sibling
+  Alt+Shift+Right     indent (alternative binding)
+  Shift+Tab           outdent — move to parent's level after parent
+  Alt+Shift+Left      outdent (alternative binding)
+
+Reordering (within siblings only):
+  Alt+Shift+Up        move node up among siblings
+  Alt+Shift+Down      move node down among siblings
+
+Navigation:
+  Up arrow            move focus to previous visible node
+  Down arrow          move focus to next visible node
+
+Expand / Collapse:
+  Ctrl+Down           expand focused node
+  Ctrl+Up             collapse focused node
+
+## v1 — deprioritized (implement if time allows)
+
+Expand / Collapse:
+  Ctrl+Space           expand/collapse all siblings at same level
+  Ctrl+Space+Space     expand/collapse ALL children recursively
+
+System:
+  Ctrl+?               show keyboard shortcuts help panel
+
+## skip (not v1)
+
+  Zoom shortcuts       zoom feature skipped for v1
+  Undo/redo            needs own design cycle (see docs/reference/undo-redo-design-notes.md)
+  Rich text formatting no rich text in v1
+  Notes (Shift+Enter)  adds model field
+  Complete (Ctrl+Enter) adds model field
+  Duplicate            new feature
+  Search / Jump-to     new subsystem
+  Multi-select         new subsystem
+  Copy link / Mirror   new features
+  Move To dialog       new feature
+  Sidebar toggle       no sidebar in v1
+  Star page            new feature
+  Print                browser handles natively
