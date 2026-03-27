@@ -21,4 +21,4 @@ dist
 *.tsbuildinfo
 
 # Elm
-elm-stuff
+elm-stuff.claude/worktrees/
