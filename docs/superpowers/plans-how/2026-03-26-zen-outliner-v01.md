@@ -1,12 +1,16 @@
-# zen-outliner v1 Implementation Plan (v3 — final model)
+# zen-outliner v01 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a working Workflowy clone — infinite-nesting outliner with keyboard navigation, dark mode only, localStorage persistence.
+**Goal:** Build a working outliner with Checkvist interaction (selected + editing states), Workflowy visual design, dark mode only, localStorage persistence.
 
-**Architecture:** Flat array of OutlineItems in a mobx-bonsai store. Computed indexes for O(1) lookups. Fractional indexing for ordering. observer() components from mobx-react-lite. onSnapshot for auto-save to localStorage.
+**Spec:** docs/superpowers/specs-what/2026-03-26-zen-outliner-v01.md
 
-**Tech Stack:** React 19, TypeScript, Vite, Tailwind CSS v4, pnpm, mobx, mobx-bonsai, mobx-react-lite, fractional-indexing
+**Architecture:** Flat array of OutlineItems in a mobx-bonsai store. Computed indexes for O(1) lookups. Fractional indexing for ordering. observer() components from mobx-react-lite. Debounced onSnapshot for auto-save. Selected/editing state flag controls keyboard handler.
+
+**Tech Stack:** React 19, TypeScript, Vite, Tailwind CSS v4, pnpm, mobx, mobx-bonsai, mobx-react-lite, fractional-indexing, vitest
+
+**Existing:** Vite + React + TS + Tailwind scaffold is done (main.tsx, index.css with dark theme). Everything else in src/ is stale from a previous plan and must be replaced.
 
 ---
 
@@ -14,47 +18,61 @@
 
 ```
 src/
-  main.tsx                  — Entry point, renders App
-  App.tsx                   — Top-level: creates store, renders Breadcrumb + OutlineTree
+  main.tsx                    — Entry point (exists, keep as-is)
+  App.tsx                     — Creates store, renders OutlineTree
+  index.css                   — Tailwind + dark theme (exists, keep as-is)
   models/
-    OutlineStore.ts         — Store: nodeType with items, collapsedIds, zoomId, all actions, computed indexes
-    OutlineStore.test.ts    — Tests for all store operations
+    types.ts                  — OutlineItem interface
+    OutlineStore.ts           — mobx-bonsai nodeType: items, collapsedIds, computed indexes, all actions
+    OutlineStore.test.ts      — Tests for all store operations
   components/
-    OutlineTree.tsx          — Recursive tree renderer (observer)
-    OutlineNode.tsx          — Single node: bullet, text input, hover triangle (observer)
-    Breadcrumb.tsx           — Zoom breadcrumb navigation (observer)
-  index.css                 — Tailwind imports + custom dark theme
-index.html                  — Vite entry HTML
+    OutlineTree.tsx            — Renders root-level items, delegates to OutlineNode
+    OutlineNode.tsx            — Single node: bullet, contentEditable, children recursion
+  lib/
+    persistence.ts             — Debounced localStorage save/load
 ```
 
 ---
 
-## Completed
-
-### Task 0: Scaffold ✅
-Vite + React 19 + TypeScript + Tailwind v4 done.
-
----
-
-### Task 1: Install dependencies + clean up old code
+### Task 1: Cleanup stale code + install dependencies
 
 **Files:**
+- Delete: all files in `src/components/`, `src/models/`
+- Delete: `src/store.ts`, `src/store.test.ts`, `src/types.ts` (if they exist)
+- Modify: `src/App.tsx` (reset to placeholder)
 - Modify: `package.json`
-- Delete: `src/store.ts`, `src/store.test.ts`, `src/types.ts`
 
-- [ ] **Step 1: Install dependencies**
+- [ ] **Step 1: Delete all stale src files**
+
+```bash
+rm -rf src/components src/models
+rm -f src/store.ts src/store.test.ts src/types.ts
+mkdir -p src/components src/models src/lib
+```
+
+- [ ] **Step 2: Reset App.tsx to placeholder**
+
+Replace `src/App.tsx`:
+
+```tsx
+export default function App() {
+  return (
+    <div className="min-h-screen" style={{ backgroundColor: "var(--bg-primary)" }}>
+      <p style={{ color: "var(--text-primary)", padding: "2rem" }}>zen-outliner</p>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: Install dependencies**
 
 ```bash
 pnpm add mobx mobx-bonsai mobx-react-lite fractional-indexing
 ```
 
-- [ ] **Step 2: Install fractional-indexing types if available, otherwise create declaration**
+- [ ] **Step 4: Add fractional-indexing type declaration if needed**
 
-```bash
-pnpm add -D @types/fractional-indexing 2>/dev/null || true
-```
-
-If no types exist, create `src/fractional-indexing.d.ts`:
+Check if types exist. If not, create `src/fractional-indexing.d.ts`:
 
 ```ts
 declare module "fractional-indexing" {
@@ -70,34 +88,49 @@ declare module "fractional-indexing" {
 }
 ```
 
-- [ ] **Step 3: Remove old files**
+- [ ] **Step 5: Verify app still runs**
 
 ```bash
-rm -f src/store.ts src/store.test.ts src/types.ts
+pnpm dev
 ```
 
-- [ ] **Step 4: Commit**
+Expected: Dark page with "zen-outliner" text.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add -A && git commit -m "chore: add mobx-bonsai, fractional-indexing; remove old store"
+git add -A && git commit -m "chore: clean stale code, install mobx-bonsai + fractional-indexing"
 ```
 
 ---
 
-### Task 2: OutlineStore — model, actions, computed indexes
+### Task 2: Types + OutlineStore with tests
 
 **Files:**
+- Create: `src/models/types.ts`
 - Create: `src/models/OutlineStore.ts`
 - Create: `src/models/OutlineStore.test.ts`
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **Step 1: Create types**
+
+Create `src/models/types.ts`:
+
+```ts
+export interface OutlineItem {
+  id: string;
+  parentId: string | null;
+  content: string;
+  order: string;
+}
+```
+
+- [ ] **Step 2: Write failing tests**
 
 Create `src/models/OutlineStore.test.ts`:
 
 ```ts
 import { describe, it, expect, beforeEach } from "vitest";
-import { createStore } from "./OutlineStore";
-import { TOutlineStore } from "./OutlineStore";
+import { createStore, TOutlineStore } from "./OutlineStore";
 import type { OutlineStore } from "./OutlineStore";
 
 let store: OutlineStore;
@@ -113,23 +146,28 @@ describe("createStore", () => {
     expect(store.items[0].parentId).toBe(null);
     expect(typeof store.items[0].order).toBe("string");
   });
+
+  it("initializes with empty collapsedIds", () => {
+    expect(store.collapsedIds).toEqual([]);
+  });
 });
 
-describe("computed indexes", () => {
-  it("itemsById returns map of all items", () => {
+describe("computed: itemsById", () => {
+  it("returns map of all items by id", () => {
     const map = TOutlineStore.itemsById(store);
     expect(map.size).toBe(1);
     expect(map.get(store.items[0].id)).toBe(store.items[0]);
   });
+});
 
-  it("childrenByParentId groups items by parentId sorted by order", () => {
+describe("computed: childrenByParentId", () => {
+  it("groups and sorts items by parentId", () => {
     const firstId = store.items[0].id;
     TOutlineStore.addAfter(store, firstId);
     TOutlineStore.addAfter(store, firstId);
     const map = TOutlineStore.childrenByParentId(store);
     const roots = map.get(null)!;
     expect(roots.length).toBe(3);
-    // verify sorted
     for (let i = 1; i < roots.length; i++) {
       expect(roots[i].order > roots[i - 1].order).toBe(true);
     }
@@ -137,49 +175,71 @@ describe("computed indexes", () => {
 });
 
 describe("addAfter", () => {
-  it("adds a sibling after the target item", () => {
+  it("adds empty sibling after target", () => {
     const firstId = store.items[0].id;
     const newId = TOutlineStore.addAfter(store, firstId);
     expect(store.items.length).toBe(2);
-    expect(newId).toBeTruthy();
     const map = TOutlineStore.childrenByParentId(store);
     const roots = map.get(null)!;
     expect(roots[0].id).toBe(firstId);
     expect(roots[1].id).toBe(newId);
   });
 
-  it("generates order between target and next sibling", () => {
+  it("inserts between target and next sibling", () => {
     const firstId = store.items[0].id;
     const secondId = TOutlineStore.addAfter(store, firstId);
-    const thirdId = TOutlineStore.addAfter(store, firstId);
-    // third should be between first and second
-    const map = TOutlineStore.childrenByParentId(store);
-    const roots = map.get(null)!;
+    const middleId = TOutlineStore.addAfter(store, firstId);
+    const roots = TOutlineStore.childrenByParentId(store).get(null)!;
     expect(roots[0].id).toBe(firstId);
-    expect(roots[1].id).toBe(thirdId);
+    expect(roots[1].id).toBe(middleId);
     expect(roots[2].id).toBe(secondId);
   });
 });
 
+describe("setContent", () => {
+  it("updates item content", () => {
+    TOutlineStore.setContent(store, store.items[0].id, "hello");
+    expect(store.items[0].content).toBe("hello");
+  });
+});
+
 describe("removeItem", () => {
-  it("removes an item and its descendants", () => {
+  it("removes item and descendants", () => {
     const firstId = store.items[0].id;
-    const secondId = TOutlineStore.addAfter(store, firstId);
-    TOutlineStore.indentItem(store, secondId);
+    const childId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, childId);
     TOutlineStore.removeItem(store, firstId);
     expect(store.items.length).toBe(0);
   });
 
-  it("returns previous sibling id for focus", () => {
+  it("returns focus target (previous sibling)", () => {
     const firstId = store.items[0].id;
     const secondId = TOutlineStore.addAfter(store, firstId);
-    const focusId = TOutlineStore.removeItem(store, secondId);
-    expect(focusId).toBe(firstId);
+    const focusTarget = TOutlineStore.removeItem(store, secondId);
+    expect(focusTarget).toBe(firstId);
+  });
+
+  it("returns parent as focus target when no previous sibling", () => {
+    const firstId = store.items[0].id;
+    const childId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, childId);
+    const focusTarget = TOutlineStore.removeItem(store, childId);
+    expect(focusTarget).toBe(firstId);
+  });
+
+  it("cleans up collapsedIds for removed items", () => {
+    const firstId = store.items[0].id;
+    const childId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, childId);
+    TOutlineStore.toggleCollapse(store, firstId);
+    expect(store.collapsedIds).toContain(firstId);
+    TOutlineStore.removeItem(store, firstId);
+    expect(store.collapsedIds).not.toContain(firstId);
   });
 });
 
 describe("indentItem", () => {
-  it("makes item a child of its previous sibling", () => {
+  it("makes item child of previous sibling", () => {
     const firstId = store.items[0].id;
     const secondId = TOutlineStore.addAfter(store, firstId);
     TOutlineStore.indentItem(store, secondId);
@@ -187,7 +247,7 @@ describe("indentItem", () => {
     expect(item.parentId).toBe(firstId);
   });
 
-  it("does nothing if item is first sibling", () => {
+  it("does nothing for first sibling", () => {
     const firstId = store.items[0].id;
     TOutlineStore.indentItem(store, firstId);
     expect(store.items[0].parentId).toBe(null);
@@ -204,15 +264,14 @@ describe("outdentItem", () => {
     expect(item.parentId).toBe(null);
   });
 
-  it("does nothing if item is at root", () => {
-    const firstId = store.items[0].id;
-    TOutlineStore.outdentItem(store, firstId);
+  it("does nothing for root items", () => {
+    TOutlineStore.outdentItem(store, store.items[0].id);
     expect(store.items[0].parentId).toBe(null);
   });
 });
 
-describe("moveItemUp / moveItemDown", () => {
-  it("moveItemUp swaps with previous sibling", () => {
+describe("moveItemUp", () => {
+  it("moves item before previous sibling", () => {
     const firstId = store.items[0].id;
     const secondId = TOutlineStore.addAfter(store, firstId);
     TOutlineStore.moveItemUp(store, secondId);
@@ -221,7 +280,17 @@ describe("moveItemUp / moveItemDown", () => {
     expect(roots[1].id).toBe(firstId);
   });
 
-  it("moveItemDown swaps with next sibling", () => {
+  it("does nothing for first sibling", () => {
+    const firstId = store.items[0].id;
+    TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.moveItemUp(store, firstId);
+    const roots = TOutlineStore.childrenByParentId(store).get(null)!;
+    expect(roots[0].id).toBe(firstId);
+  });
+});
+
+describe("moveItemDown", () => {
+  it("moves item after next sibling", () => {
     const firstId = store.items[0].id;
     const secondId = TOutlineStore.addAfter(store, firstId);
     TOutlineStore.moveItemDown(store, firstId);
@@ -232,100 +301,120 @@ describe("moveItemUp / moveItemDown", () => {
 });
 
 describe("toggleCollapse", () => {
-  it("adds and removes from collapsedIds", () => {
-    const firstId = store.items[0].id;
-    expect(store.collapsedIds.length).toBe(0);
-    TOutlineStore.toggleCollapse(store, firstId);
-    expect(store.collapsedIds).toContain(firstId);
-    TOutlineStore.toggleCollapse(store, firstId);
-    expect(store.collapsedIds).not.toContain(firstId);
+  it("adds id to collapsedIds", () => {
+    const id = store.items[0].id;
+    TOutlineStore.toggleCollapse(store, id);
+    expect(store.collapsedIds).toContain(id);
+  });
+
+  it("removes id on second toggle", () => {
+    const id = store.items[0].id;
+    TOutlineStore.toggleCollapse(store, id);
+    TOutlineStore.toggleCollapse(store, id);
+    expect(store.collapsedIds).not.toContain(id);
   });
 });
 
 describe("isCollapsed", () => {
-  it("returns true if item is in collapsedIds", () => {
-    const firstId = store.items[0].id;
-    expect(TOutlineStore.isCollapsed(store, firstId)).toBe(false);
-    TOutlineStore.toggleCollapse(store, firstId);
-    expect(TOutlineStore.isCollapsed(store, firstId)).toBe(true);
+  it("returns collapse state", () => {
+    const id = store.items[0].id;
+    expect(TOutlineStore.isCollapsed(store, id)).toBe(false);
+    TOutlineStore.toggleCollapse(store, id);
+    expect(TOutlineStore.isCollapsed(store, id)).toBe(true);
   });
 });
 
-describe("zoom", () => {
-  it("sets and clears zoomId", () => {
-    const firstId = store.items[0].id;
-    TOutlineStore.zoom(store, firstId);
-    expect(store.zoomId).toBe(firstId);
-    TOutlineStore.zoom(store, null);
-    expect(store.zoomId).toBe(null);
+describe("splitNode", () => {
+  it("splits content at cursor position", () => {
+    const id = store.items[0].id;
+    TOutlineStore.setContent(store, id, "hello world");
+    const newId = TOutlineStore.splitNode(store, id, 5);
+    const original = TOutlineStore.itemsById(store).get(id)!;
+    const newItem = TOutlineStore.itemsById(store).get(newId)!;
+    expect(original.content).toBe("hello");
+    expect(newItem.content).toBe(" world");
+    expect(newItem.parentId).toBe(original.parentId);
   });
 });
 
-describe("setContent", () => {
-  it("updates item content", () => {
+describe("mergeWithPrevious", () => {
+  it("merges content into previous sibling", () => {
     const firstId = store.items[0].id;
     TOutlineStore.setContent(store, firstId, "hello");
-    expect(store.items[0].content).toBe("hello");
+    const secondId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.setContent(store, secondId, " world");
+    const result = TOutlineStore.mergeWithPrevious(store, secondId);
+    expect(result).toEqual({ targetId: firstId, cursorPos: 5 });
+    expect(store.items.length).toBe(1);
+    expect(store.items[0].content).toBe("hello world");
+  });
+
+  it("returns null for first sibling (no previous)", () => {
+    const result = TOutlineStore.mergeWithPrevious(store, store.items[0].id);
+    expect(result).toBe(null);
   });
 });
 
-describe("getBreadcrumbs", () => {
-  it("returns Home when not zoomed", () => {
-    const crumbs = TOutlineStore.getBreadcrumbs(store);
-    expect(crumbs).toEqual([{ id: null, label: "Home" }]);
+describe("getVisibleNodes", () => {
+  it("returns root items when nothing collapsed", () => {
+    const firstId = store.items[0].id;
+    TOutlineStore.addAfter(store, firstId);
+    const visible = TOutlineStore.getVisibleNodes(store);
+    expect(visible.length).toBe(2);
   });
 
-  it("returns path when zoomed", () => {
+  it("hides children of collapsed nodes", () => {
     const firstId = store.items[0].id;
-    TOutlineStore.setContent(store, firstId, "Projects");
-    TOutlineStore.zoom(store, firstId);
-    const crumbs = TOutlineStore.getBreadcrumbs(store);
-    expect(crumbs.length).toBe(2);
-    expect(crumbs[0]).toEqual({ id: null, label: "Home" });
-    expect(crumbs[1]).toEqual({ id: firstId, label: "Projects" });
+    const childId = TOutlineStore.addAfter(store, firstId);
+    TOutlineStore.indentItem(store, childId);
+    TOutlineStore.toggleCollapse(store, firstId);
+    const visible = TOutlineStore.getVisibleNodes(store);
+    expect(visible.length).toBe(1);
+    expect(visible[0].id).toBe(firstId);
+  });
+});
+
+describe("canDelete", () => {
+  it("returns false for last remaining item", () => {
+    expect(TOutlineStore.canDelete(store, store.items[0].id)).toBe(false);
+  });
+
+  it("returns true when more than one item", () => {
+    const firstId = store.items[0].id;
+    TOutlineStore.addAfter(store, firstId);
+    expect(TOutlineStore.canDelete(store, firstId)).toBe(true);
   });
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [ ] **Step 3: Run tests to verify they fail**
 
 ```bash
 pnpm test
 ```
 
-Expected: All tests FAIL
+Expected: All fail.
 
-- [ ] **Step 3: Implement OutlineStore**
+- [ ] **Step 4: Implement OutlineStore**
 
 Create `src/models/OutlineStore.ts`:
 
 ```ts
 import { node, nodeType } from "mobx-bonsai";
 import { generateKeyBetween } from "fractional-indexing";
+import type { OutlineItem } from "./types";
 
-// --- Types ---
-
-export interface OutlineItem {
-  id: string;
-  parentId: string | null;
-  content: string;
-  order: string;
-}
+export type { OutlineItem } from "./types";
 
 export interface OutlineStore {
   items: OutlineItem[];
   collapsedIds: string[];
-  zoomId: string | null;
 }
-
-// --- ID generation ---
 
 let counter = 0;
 function genId(): string {
   return `${Date.now()}-${++counter}`;
 }
-
-// --- Node type ---
 
 export const TOutlineStore = nodeType<OutlineStore>()
   .getters({
@@ -355,56 +444,53 @@ export const TOutlineStore = nodeType<OutlineStore>()
     },
 
     getChildren(parentId: string | null): OutlineItem[] {
-      return this.childrenByParentId.get(parentId) ?? [];
+      return TOutlineStore.childrenByParentId(this).get(parentId) ?? [];
     },
 
     getSiblings(itemId: string): OutlineItem[] {
-      const item = this.itemsById.get(itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (!item) return [];
-      return this.childrenByParentId.get(item.parentId) ?? [];
+      return TOutlineStore.getChildren(this, item.parentId);
     },
 
     isCollapsed(itemId: string): boolean {
       return this.collapsedIds.includes(itemId);
     },
 
-    getBreadcrumbs(): { id: string | null; label: string }[] {
-      const crumbs: { id: string | null; label: string }[] = [
-        { id: null, label: "Home" },
-      ];
-      if (!this.zoomId) return crumbs;
-
-      const path: OutlineItem[] = [];
-      let current = this.itemsById.get(this.zoomId);
-      while (current) {
-        path.unshift(current);
-        current = current.parentId
-          ? this.itemsById.get(current.parentId)
-          : undefined;
-      }
-      for (const item of path) {
-        crumbs.push({ id: item.id, label: item.content || "(empty)" });
-      }
-      return crumbs;
+    hasChildren(itemId: string): boolean {
+      return TOutlineStore.getChildren(this, itemId).length > 0;
     },
 
-    getZoomTitle(): string {
-      if (!this.zoomId) return "Home";
-      const item = this.itemsById.get(this.zoomId);
-      return item?.content || "(empty)";
+    canDelete(itemId: string): boolean {
+      return this.items.length > 1;
+    },
+
+    getVisibleNodes(): OutlineItem[] {
+      const result: OutlineItem[] = [];
+      const walk = (parentId: string | null) => {
+        const children = TOutlineStore.getChildren(this, parentId);
+        for (const child of children) {
+          result.push(child);
+          if (!TOutlineStore.isCollapsed(this, child.id)) {
+            walk(child.id);
+          }
+        }
+      };
+      walk(null);
+      return result;
     },
   })
   .actions({
     setContent(itemId: string, content: string) {
-      const item = this.itemsById.get(itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (item) item.content = content;
     },
 
     addAfter(afterId: string): string {
-      const target = this.itemsById.get(afterId);
+      const target = TOutlineStore.itemsById(this).get(afterId);
       if (!target) return "";
 
-      const siblings = this.getChildren(target.parentId);
+      const siblings = TOutlineStore.getChildren(this, target.parentId);
       const idx = siblings.findIndex((s) => s.id === afterId);
       const nextSibling = siblings[idx + 1];
       const newOrder = generateKeyBetween(
@@ -423,33 +509,31 @@ export const TOutlineStore = nodeType<OutlineStore>()
     },
 
     removeItem(itemId: string): string | null {
-      const item = this.itemsById.get(itemId);
+      if (!TOutlineStore.canDelete(this, itemId)) return null;
+
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (!item) return null;
 
-      // Determine focus target before removal
-      const siblings = this.getChildren(item.parentId);
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
       const idx = siblings.findIndex((s) => s.id === itemId);
       const focusTarget = idx > 0 ? siblings[idx - 1].id : item.parentId;
 
-      // Collect all descendant IDs
       const idsToRemove = new Set<string>();
       const collectIds = (id: string) => {
         idsToRemove.add(id);
-        const children = this.getChildren(id);
+        const children = TOutlineStore.getChildren(this, id);
         for (const child of children) {
           collectIds(child.id);
         }
       };
       collectIds(itemId);
 
-      // Remove from end to avoid index shifting
       for (let i = this.items.length - 1; i >= 0; i--) {
         if (idsToRemove.has(this.items[i].id)) {
           this.items.splice(i, 1);
         }
       }
 
-      // Clean up collapsedIds
       for (let i = this.collapsedIds.length - 1; i >= 0; i--) {
         if (idsToRemove.has(this.collapsedIds[i])) {
           this.collapsedIds.splice(i, 1);
@@ -460,15 +544,15 @@ export const TOutlineStore = nodeType<OutlineStore>()
     },
 
     indentItem(itemId: string) {
-      const item = this.itemsById.get(itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (!item) return;
 
-      const siblings = this.getChildren(item.parentId);
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
       const idx = siblings.findIndex((s) => s.id === itemId);
       if (idx === 0) return;
 
       const newParentId = siblings[idx - 1].id;
-      const newSiblings = this.getChildren(newParentId);
+      const newSiblings = TOutlineStore.getChildren(this, newParentId);
       const lastChild = newSiblings[newSiblings.length - 1];
 
       item.parentId = newParentId;
@@ -476,13 +560,13 @@ export const TOutlineStore = nodeType<OutlineStore>()
     },
 
     outdentItem(itemId: string) {
-      const item = this.itemsById.get(itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (!item || item.parentId === null) return;
 
-      const parent = this.itemsById.get(item.parentId);
+      const parent = TOutlineStore.itemsById(this).get(item.parentId);
       if (!parent) return;
 
-      const parentSiblings = this.getChildren(parent.parentId);
+      const parentSiblings = TOutlineStore.getChildren(this, parent.parentId);
       const parentIdx = parentSiblings.findIndex((s) => s.id === parent.id);
       const nextAfterParent = parentSiblings[parentIdx + 1];
 
@@ -494,10 +578,10 @@ export const TOutlineStore = nodeType<OutlineStore>()
     },
 
     moveItemUp(itemId: string) {
-      const item = this.itemsById.get(itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (!item) return;
 
-      const siblings = this.getChildren(item.parentId);
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
       const idx = siblings.findIndex((s) => s.id === itemId);
       if (idx === 0) return;
 
@@ -511,10 +595,10 @@ export const TOutlineStore = nodeType<OutlineStore>()
     },
 
     moveItemDown(itemId: string) {
-      const item = this.itemsById.get(itemId);
+      const item = TOutlineStore.itemsById(this).get(itemId);
       if (!item) return;
 
-      const siblings = this.getChildren(item.parentId);
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
       const idx = siblings.findIndex((s) => s.id === itemId);
       if (idx === siblings.length - 1) return;
 
@@ -536,12 +620,51 @@ export const TOutlineStore = nodeType<OutlineStore>()
       }
     },
 
-    zoom(itemId: string | null) {
-      this.zoomId = itemId;
+    splitNode(itemId: string, cursorPos: number): string {
+      const item = TOutlineStore.itemsById(this).get(itemId);
+      if (!item) return "";
+
+      const beforeText = item.content.slice(0, cursorPos);
+      const afterText = item.content.slice(cursorPos);
+
+      item.content = beforeText;
+
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
+      const idx = siblings.findIndex((s) => s.id === itemId);
+      const nextSibling = siblings[idx + 1];
+      const newOrder = generateKeyBetween(
+        item.order,
+        nextSibling?.order ?? null
+      );
+
+      const newItem: OutlineItem = {
+        id: genId(),
+        parentId: item.parentId,
+        content: afterText,
+        order: newOrder,
+      };
+      this.items.push(newItem);
+      return newItem.id;
+    },
+
+    mergeWithPrevious(itemId: string): { targetId: string; cursorPos: number } | null {
+      const item = TOutlineStore.itemsById(this).get(itemId);
+      if (!item) return null;
+
+      const siblings = TOutlineStore.getChildren(this, item.parentId);
+      const idx = siblings.findIndex((s) => s.id === itemId);
+      if (idx === 0) return null;
+
+      const prev = siblings[idx - 1];
+      const cursorPos = prev.content.length;
+      prev.content += item.content;
+
+      const itemIdx = this.items.findIndex((i) => i.id === itemId);
+      if (itemIdx >= 0) this.items.splice(itemIdx, 1);
+
+      return { targetId: prev.id, cursorPos };
     },
   });
-
-// --- Factory ---
 
 export function createStore(): OutlineStore {
   return node<OutlineStore>({
@@ -554,112 +677,149 @@ export function createStore(): OutlineStore {
       },
     ],
     collapsedIds: [],
-    zoomId: null,
   });
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 5: Run tests**
 
 ```bash
 pnpm test
 ```
 
-Expected: All tests PASS
+Expected: All pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add src/models/ && git commit -m "feat: add OutlineStore with mobx-bonsai + fractional indexing"
+git add src/models/ && git commit -m "feat: OutlineStore with mobx-bonsai, fractional indexing, full test coverage"
 ```
 
 ---
 
-### Task 3: OutlineNode component (observer)
+### Task 3: Persistence (debounced localStorage)
+
+**Files:**
+- Create: `src/lib/persistence.ts`
+
+- [ ] **Step 1: Implement persistence**
+
+Create `src/lib/persistence.ts`:
+
+```ts
+import { node, onSnapshot } from "mobx-bonsai";
+import { createStore } from "../models/OutlineStore";
+import type { OutlineStore } from "../models/OutlineStore";
+
+const STORAGE_KEY = "zen-outliner-data";
+const DEBOUNCE_MS = 500;
+
+export function loadOrCreateStore(): OutlineStore {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const data = JSON.parse(raw);
+      if (data && Array.isArray(data.items) && data.items.length > 0) {
+        return node(data);
+      }
+    }
+  } catch {
+    // Corrupt data — fall through to fresh store
+  }
+  return createStore();
+}
+
+export function startAutoSave(store: OutlineStore): () => void {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  const dispose = onSnapshot(store, (snapshot) => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    }, DEBOUNCE_MS);
+  });
+
+  return () => {
+    if (timeoutId) clearTimeout(timeoutId);
+    dispose();
+  };
+}
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add src/lib/ && git commit -m "feat: debounced localStorage persistence"
+```
+
+---
+
+### Task 4: OutlineNode component
 
 **Files:**
 - Create: `src/components/OutlineNode.tsx`
 
-- [ ] **Step 1: Create the node component**
+- [ ] **Step 1: Implement OutlineNode**
 
 Create `src/components/OutlineNode.tsx`:
 
 ```tsx
-import { useRef, useEffect, KeyboardEvent } from "react";
+import { useRef, useEffect } from "react";
 import { observer } from "mobx-react-lite";
 import type { OutlineItem, OutlineStore } from "../models/OutlineStore";
 import { TOutlineStore } from "../models/OutlineStore";
 
-interface OutlineNodeProps {
+interface Props {
   item: OutlineItem;
   store: OutlineStore;
-  focusId: string | null;
-  onFocused: () => void;
-  onRequestFocus: (id: string) => void;
+  selectedId: string | null;
+  editingId: string | null;
+  onSelect: (id: string) => void;
+  onStartEditing: (id: string) => void;
+  onStopEditing: () => void;
+  onRequestFocus: (id: string, cursorPos?: number) => void;
 }
 
 const OutlineNode = observer(function OutlineNode({
   item,
   store,
-  focusId,
-  onFocused,
+  selectedId,
+  editingId,
+  onSelect,
+  onStartEditing,
+  onStopEditing,
   onRequestFocus,
-}: OutlineNodeProps) {
+}: Props) {
   const inputRef = useRef<HTMLDivElement>(null);
   const children = TOutlineStore.getChildren(store, item.id);
   const hasChildren = children.length > 0;
   const isCollapsed = TOutlineStore.isCollapsed(store, item.id);
+  const isSelected = selectedId === item.id;
+  const isEditing = editingId === item.id;
 
   useEffect(() => {
-    if (focusId === item.id && inputRef.current) {
+    if (isEditing && inputRef.current) {
       inputRef.current.focus();
-      const range = document.createRange();
-      const sel = window.getSelection();
-      if (inputRef.current.childNodes.length > 0) {
-        range.selectNodeContents(inputRef.current);
-        range.collapse(false);
-      }
-      sel?.removeAllRanges();
-      sel?.addRange(range);
-      onFocused();
     }
-  }, [focusId, item.id, onFocused]);
+  }, [isEditing]);
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      const newId = TOutlineStore.addAfter(store, item.id);
-      if (newId) onRequestFocus(newId);
-    } else if (e.key === "Tab" && !e.shiftKey) {
-      e.preventDefault();
-      TOutlineStore.indentItem(store, item.id);
-      onRequestFocus(item.id);
-    } else if (e.key === "Tab" && e.shiftKey) {
-      e.preventDefault();
-      TOutlineStore.outdentItem(store, item.id);
-      onRequestFocus(item.id);
-    } else if (e.key === "Backspace" && item.content === "") {
-      e.preventDefault();
-      const focusTarget = TOutlineStore.removeItem(store, item.id);
-      if (focusTarget) onRequestFocus(focusTarget);
-    } else if (e.key === "ArrowUp" && e.ctrlKey) {
-      e.preventDefault();
-      TOutlineStore.moveItemUp(store, item.id);
-      onRequestFocus(item.id);
-    } else if (e.key === "ArrowDown" && e.ctrlKey) {
-      e.preventDefault();
-      TOutlineStore.moveItemDown(store, item.id);
-      onRequestFocus(item.id);
-    } else if (e.key === "ArrowUp" && !e.ctrlKey) {
-      e.preventDefault();
-      const all = document.querySelectorAll<HTMLDivElement>("[contenteditable]");
-      const idx = Array.from(all).indexOf(inputRef.current!);
-      if (idx > 0) (all[idx - 1] as HTMLDivElement).focus();
-    } else if (e.key === "ArrowDown" && !e.ctrlKey) {
-      e.preventDefault();
-      const all = document.querySelectorAll<HTMLDivElement>("[contenteditable]");
-      const idx = Array.from(all).indexOf(inputRef.current!);
-      if (idx < all.length - 1) (all[idx + 1] as HTMLDivElement).focus();
+  const handleClick = () => {
+    onSelect(item.id);
+    onStartEditing(item.id);
+  };
+
+  const handleBulletClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSelect(item.id);
+    if (hasChildren) {
+      TOutlineStore.toggleCollapse(store, item.id);
+    }
+  };
+
+  const handleTriangleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (hasChildren) {
+      TOutlineStore.toggleCollapse(store, item.id);
     }
   };
 
@@ -669,18 +829,167 @@ const OutlineNode = observer(function OutlineNode({
     }
   };
 
-  const handleBulletClick = () => {
-    if (hasChildren) TOutlineStore.zoom(store, item.id);
-  };
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isEditing) return;
 
-  const handleTriangleClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (hasChildren) TOutlineStore.toggleCollapse(store, item.id);
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onStopEditing();
+      return;
+    }
+
+    if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      const sel = window.getSelection();
+      const cursorPos = sel?.focusOffset ?? item.content.length;
+      if (cursorPos === item.content.length) {
+        const newId = TOutlineStore.addAfter(store, item.id);
+        if (newId) {
+          onSelect(newId);
+          onStartEditing(newId);
+          onRequestFocus(newId);
+        }
+      } else {
+        const newId = TOutlineStore.splitNode(store, item.id, cursorPos);
+        if (newId) {
+          onSelect(newId);
+          onStartEditing(newId);
+          onRequestFocus(newId);
+        }
+      }
+      return;
+    }
+
+    if (e.key === "Backspace") {
+      if (item.content === "") {
+        e.preventDefault();
+        if (TOutlineStore.canDelete(store, item.id)) {
+          const focusTarget = TOutlineStore.removeItem(store, item.id);
+          if (focusTarget) {
+            onSelect(focusTarget);
+            onStartEditing(focusTarget);
+            onRequestFocus(focusTarget);
+          }
+        }
+        return;
+      }
+      const sel = window.getSelection();
+      if (sel && sel.focusOffset === 0 && sel.isCollapsed) {
+        e.preventDefault();
+        const result = TOutlineStore.mergeWithPrevious(store, item.id);
+        if (result) {
+          onSelect(result.targetId);
+          onStartEditing(result.targetId);
+          onRequestFocus(result.targetId, result.cursorPos);
+        }
+        return;
+      }
+    }
+
+    if (e.key === "Tab" && !e.shiftKey) {
+      e.preventDefault();
+      TOutlineStore.indentItem(store, item.id);
+      onRequestFocus(item.id);
+      return;
+    }
+
+    if (e.key === "Tab" && e.shiftKey) {
+      e.preventDefault();
+      TOutlineStore.outdentItem(store, item.id);
+      onRequestFocus(item.id);
+      return;
+    }
+
+    if (e.altKey && e.shiftKey && e.key === "ArrowUp") {
+      e.preventDefault();
+      TOutlineStore.moveItemUp(store, item.id);
+      onRequestFocus(item.id);
+      return;
+    }
+    if (e.altKey && e.shiftKey && e.key === "ArrowDown") {
+      e.preventDefault();
+      TOutlineStore.moveItemDown(store, item.id);
+      onRequestFocus(item.id);
+      return;
+    }
+
+    if (e.altKey && e.shiftKey && e.key === "ArrowRight") {
+      e.preventDefault();
+      TOutlineStore.indentItem(store, item.id);
+      onRequestFocus(item.id);
+      return;
+    }
+    if (e.altKey && e.shiftKey && e.key === "ArrowLeft") {
+      e.preventDefault();
+      TOutlineStore.outdentItem(store, item.id);
+      onRequestFocus(item.id);
+      return;
+    }
+
+    if (e.ctrlKey && e.key === "ArrowUp") {
+      e.preventDefault();
+      if (hasChildren) TOutlineStore.toggleCollapse(store, item.id);
+      return;
+    }
+    if (e.ctrlKey && e.key === "ArrowDown") {
+      e.preventDefault();
+      if (hasChildren) TOutlineStore.toggleCollapse(store, item.id);
+      return;
+    }
+
+    if (e.ctrlKey && e.shiftKey && e.key === "Backspace") {
+      e.preventDefault();
+      if (TOutlineStore.canDelete(store, item.id)) {
+        const focusTarget = TOutlineStore.removeItem(store, item.id);
+        if (focusTarget) {
+          onSelect(focusTarget);
+          onStartEditing(focusTarget);
+          onRequestFocus(focusTarget);
+        }
+      }
+      return;
+    }
+
+    if (e.key === "ArrowUp" && !e.ctrlKey && !e.altKey) {
+      const sel = window.getSelection();
+      if (sel && sel.focusOffset === 0 && sel.isCollapsed) {
+        e.preventDefault();
+        const visible = TOutlineStore.getVisibleNodes(store);
+        const idx = visible.findIndex((n) => n.id === item.id);
+        if (idx > 0) {
+          const prevId = visible[idx - 1].id;
+          onSelect(prevId);
+          onStartEditing(prevId);
+          onRequestFocus(prevId);
+        }
+      }
+    }
+
+    if (e.key === "ArrowDown" && !e.ctrlKey && !e.altKey) {
+      const sel = window.getSelection();
+      const atEnd = sel && sel.focusOffset === (inputRef.current?.textContent?.length ?? 0) && sel.isCollapsed;
+      if (atEnd) {
+        e.preventDefault();
+        const visible = TOutlineStore.getVisibleNodes(store);
+        const idx = visible.findIndex((n) => n.id === item.id);
+        if (idx < visible.length - 1) {
+          const nextId = visible[idx + 1].id;
+          onSelect(nextId);
+          onStartEditing(nextId);
+          onRequestFocus(nextId);
+        }
+      }
+    }
   };
 
   return (
     <div>
-      <div className="group flex items-center py-1.5 relative">
+      <div
+        className={`group flex items-center py-1.5 relative cursor-pointer ${
+          isSelected ? "bg-[var(--bg-hover)]" : ""
+        }`}
+        onClick={handleClick}
+      >
         {hasChildren && (
           <button
             onClick={handleTriangleClick}
@@ -713,8 +1022,10 @@ const OutlineNode = observer(function OutlineNode({
           suppressContentEditableWarning
           onInput={handleInput}
           onKeyDown={handleKeyDown}
-          data-placeholder="Start typing..."
-          className="flex-1 ml-2.5 text-base leading-relaxed outline-none text-[var(--text-secondary)] empty:before:content-[attr(data-placeholder)] empty:before:text-[var(--text-muted)] empty:before:italic"
+          onFocus={() => { onSelect(item.id); onStartEditing(item.id); }}
+          className={`flex-1 ml-2.5 text-base leading-relaxed outline-none text-[var(--text-secondary)] ${
+            isEditing ? "bg-[rgba(255,255,255,0.03)]" : ""
+          }`}
         >
           {item.content}
         </div>
@@ -727,8 +1038,11 @@ const OutlineNode = observer(function OutlineNode({
               key={child.id}
               item={child}
               store={store}
-              focusId={focusId}
-              onFocused={onFocused}
+              selectedId={selectedId}
+              editingId={editingId}
+              onSelect={onSelect}
+              onStartEditing={onStartEditing}
+              onStopEditing={onStopEditing}
               onRequestFocus={onRequestFocus}
             />
           ))}
@@ -750,16 +1064,15 @@ pnpm exec tsc --noEmit
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/components/OutlineNode.tsx && git commit -m "feat: add OutlineNode component with observer + keyboard handling"
+git add src/components/OutlineNode.tsx && git commit -m "feat: OutlineNode with selected/editing states, all keyboard shortcuts"
 ```
 
 ---
 
-### Task 4: OutlineTree + Breadcrumb + App wiring
+### Task 5: OutlineTree + App wiring
 
 **Files:**
 - Create: `src/components/OutlineTree.tsx`
-- Create: `src/components/Breadcrumb.tsx`
 - Modify: `src/App.tsx`
 
 - [ ] **Step 1: Create OutlineTree**
@@ -772,39 +1085,47 @@ import type { OutlineStore } from "../models/OutlineStore";
 import { TOutlineStore } from "../models/OutlineStore";
 import OutlineNode from "./OutlineNode";
 
-interface OutlineTreeProps {
+interface Props {
   store: OutlineStore;
-  focusId: string | null;
-  onFocused: () => void;
-  onRequestFocus: (id: string) => void;
+  selectedId: string | null;
+  editingId: string | null;
+  onSelect: (id: string) => void;
+  onStartEditing: (id: string) => void;
+  onStopEditing: () => void;
+  onRequestFocus: (id: string, cursorPos?: number) => void;
 }
 
 const OutlineTree = observer(function OutlineTree({
   store,
-  focusId,
-  onFocused,
+  selectedId,
+  editingId,
+  onSelect,
+  onStartEditing,
+  onStopEditing,
   onRequestFocus,
-}: OutlineTreeProps) {
-  const parentId = store.zoomId;
-  const items = TOutlineStore.getChildren(store, parentId);
+}: Props) {
+  const roots = TOutlineStore.getChildren(store, null);
 
-  if (items.length === 0) {
+  if (roots.length === 0) {
     return (
       <p className="text-[var(--text-muted)] italic text-base">
-        No items yet.
+        No items.
       </p>
     );
   }
 
   return (
     <div>
-      {items.map((item) => (
+      {roots.map((item) => (
         <OutlineNode
           key={item.id}
           item={item}
           store={store}
-          focusId={focusId}
-          onFocused={onFocused}
+          selectedId={selectedId}
+          editingId={editingId}
+          onSelect={onSelect}
+          onStartEditing={onStartEditing}
+          onStopEditing={onStopEditing}
           onRequestFocus={onRequestFocus}
         />
       ))}
@@ -815,94 +1136,118 @@ const OutlineTree = observer(function OutlineTree({
 export default OutlineTree;
 ```
 
-- [ ] **Step 2: Create Breadcrumb**
-
-Create `src/components/Breadcrumb.tsx`:
-
-```tsx
-import { observer } from "mobx-react-lite";
-import type { OutlineStore } from "../models/OutlineStore";
-import { TOutlineStore } from "../models/OutlineStore";
-
-interface BreadcrumbProps {
-  store: OutlineStore;
-}
-
-const Breadcrumb = observer(function Breadcrumb({ store }: BreadcrumbProps) {
-  const items = TOutlineStore.getBreadcrumbs(store);
-
-  return (
-    <div className="flex items-center gap-2 px-8 py-3.5 border-b border-[var(--border-color)]">
-      {items.map((item, i) => (
-        <span key={item.id ?? "home"} className="flex items-center gap-2">
-          {i > 0 && (
-            <span className="text-[var(--line-color)] text-sm">›</span>
-          )}
-          {i < items.length - 1 ? (
-            <button
-              onClick={() => TOutlineStore.zoom(store, item.id)}
-              className="text-[var(--text-muted)] text-sm hover:text-[var(--text-secondary)] transition-colors cursor-pointer"
-            >
-              {item.label}
-            </button>
-          ) : (
-            <span className="text-[var(--text-dim)] text-sm">
-              {item.label}
-            </span>
-          )}
-        </span>
-      ))}
-    </div>
-  );
-});
-
-export default Breadcrumb;
-```
-
-- [ ] **Step 3: Wire App.tsx**
+- [ ] **Step 2: Wire App.tsx**
 
 Replace `src/App.tsx`:
 
 ```tsx
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { observer } from "mobx-react-lite";
-import { getSnapshot, onSnapshot } from "mobx-bonsai";
-import { createStore, TOutlineStore } from "./models/OutlineStore";
-import type { OutlineStore } from "./models/OutlineStore";
-import Breadcrumb from "./components/Breadcrumb";
+import { loadOrCreateStore, startAutoSave } from "./lib/persistence";
+import { TOutlineStore } from "./models/OutlineStore";
 import OutlineTree from "./components/OutlineTree";
 
-const STORAGE_KEY = "zen-outliner-data";
-
-function loadStore(): OutlineStore {
-  // TODO: load from localStorage when persistence is wired
-  return createStore();
-}
-
-const store = loadStore();
-
-// Auto-save to localStorage
-onSnapshot(store, (snapshot) => {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
-});
+const store = loadOrCreateStore();
+startAutoSave(store);
 
 const App = observer(function App() {
-  const [focusId, setFocusId] = useState<string | null>(null);
-  const clearFocus = useCallback(() => setFocusId(null), []);
-  const zoomTitle = TOutlineStore.getZoomTitle(store);
+  const [selectedId, setSelectedId] = useState<string | null>(store.items[0]?.id ?? null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const handleSelect = useCallback((id: string) => setSelectedId(id), []);
+  const handleStartEditing = useCallback((id: string) => {
+    setSelectedId(id);
+    setEditingId(id);
+  }, []);
+  const handleStopEditing = useCallback(() => setEditingId(null), []);
+  const handleRequestFocus = useCallback((id: string, _cursorPos?: number) => {
+    setSelectedId(id);
+    setEditingId(id);
+  }, []);
+
+  // Selected state keyboard handler (when not editing)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (editingId) return;
+      if (!selectedId) return;
+
+      const visible = TOutlineStore.getVisibleNodes(store);
+      const idx = visible.findIndex((n) => n.id === selectedId);
+
+      switch (e.key) {
+        case "ArrowUp":
+        case "k":
+          e.preventDefault();
+          if (idx > 0) setSelectedId(visible[idx - 1].id);
+          break;
+        case "ArrowDown":
+        case "j":
+          e.preventDefault();
+          if (idx < visible.length - 1) setSelectedId(visible[idx + 1].id);
+          break;
+        case "i":
+        case "Enter":
+          e.preventDefault();
+          handleStartEditing(selectedId);
+          break;
+        case "Tab":
+          e.preventDefault();
+          if (e.shiftKey) {
+            TOutlineStore.outdentItem(store, selectedId);
+          } else {
+            TOutlineStore.indentItem(store, selectedId);
+          }
+          break;
+        case "ArrowLeft":
+          e.preventDefault();
+          if (TOutlineStore.hasChildren(store, selectedId) && !TOutlineStore.isCollapsed(store, selectedId)) {
+            TOutlineStore.toggleCollapse(store, selectedId);
+          }
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          if (TOutlineStore.hasChildren(store, selectedId) && TOutlineStore.isCollapsed(store, selectedId)) {
+            TOutlineStore.toggleCollapse(store, selectedId);
+          }
+          break;
+        case "Backspace":
+        case "Delete":
+          if (e.ctrlKey && e.shiftKey) {
+            e.preventDefault();
+            if (TOutlineStore.canDelete(store, selectedId)) {
+              const focusTarget = TOutlineStore.removeItem(store, selectedId);
+              if (focusTarget) setSelectedId(focusTarget);
+            }
+          }
+          break;
+      }
+
+      if (e.altKey && e.shiftKey) {
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          TOutlineStore.moveItemUp(store, selectedId);
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          TOutlineStore.moveItemDown(store, selectedId);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedId, editingId, handleStartEditing]);
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--bg-primary)" }}>
-      <Breadcrumb store={store} />
       <div className="max-w-[700px] mx-auto px-8 pl-[52px] pt-12 pb-12">
-        <h1 className="text-[26px] text-[var(--text-primary)] font-medium mb-10">
-          {zoomTitle}
-        </h1>
         <OutlineTree
           store={store}
-          focusId={focusId}
-          onFocused={clearFocus}
-          onRequestFocus={setFocusId}
+          selectedId={selectedId}
+          editingId={editingId}
+          onSelect={handleSelect}
+          onStartEditing={handleStartEditing}
+          onStopEditing={handleStopEditing}
+          onRequestFocus={handleRequestFocus}
         />
       </div>
     </div>
@@ -912,51 +1257,81 @@ const App = observer(function App() {
 export default App;
 ```
 
-- [ ] **Step 4: Run the app**
+- [ ] **Step 3: Run the app**
 
 ```bash
 pnpm dev
 ```
 
-Expected: Dark page, one empty node, keyboard shortcuts work.
+Expected: Dark page, one empty node selected (highlighted). Press i to edit, type text, Enter for new node, Esc to stop editing, j/k to navigate, Tab to indent.
 
-- [ ] **Step 5: Run tests**
+- [ ] **Step 4: Run tests**
 
 ```bash
 pnpm test
 ```
 
-Expected: All store tests pass.
+Expected: All pass.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add -A && git commit -m "feat: wire up full outliner with mobx-bonsai store"
+git add -A && git commit -m "feat: wire OutlineTree + App with selected/editing states and persistence"
 ```
 
 ---
 
-### Task 5: Smoke test and verify
+### Task 6: Smoke test
 
-- [ ] **Step 1: Manual smoke test**
-
-Open http://localhost:5173 and verify:
-1. Empty state shows placeholder
-2. Type text → content saves
-3. Enter → new node below
-4. Tab → indents under previous sibling
-5. Shift+Tab → outdents
-6. Backspace on empty → deletes node
-7. Ctrl+↑/↓ → reorders
-8. ↑/↓ → moves focus
-9. Click bullet → zooms into node
-10. Breadcrumb → zooms out
-11. Collapsed ring on nodes with hidden children
-12. Hover triangle on parent nodes
-13. Refresh page → check if data shows (persistence not loaded yet, just saved)
-
-- [ ] **Step 2: Final commit**
+- [ ] **Step 1: Run all tests**
 
 ```bash
-git add -A && git commit -m "feat: zen-outliner v1 — working Workflowy clone"
+pnpm test
+```
+
+Expected: All pass.
+
+- [ ] **Step 2: Manual smoke test**
+
+Open http://localhost:5173 and verify:
+
+Selected state:
+  1. Page loads, first node selected (highlighted)
+  2. j/k or arrows navigate between nodes
+  3. Tab indents selected node
+  4. Shift+Tab outdents
+  5. Alt+Shift+Up/Down reorders
+  6. ArrowLeft collapses, ArrowRight expands
+  7. Ctrl+Shift+Backspace force-deletes
+  8. i or Enter enters editing
+
+Editing state:
+  9. Cursor appears in text, type freely
+  10. Enter at end creates new sibling
+  11. Enter mid-text splits node
+  12. Backspace on empty deletes node
+  13. Backspace at start merges with previous
+  14. Tab/Shift+Tab indent/outdent while editing
+  15. Alt+Shift+Up/Down reorder while editing
+  16. Ctrl+Up/Down collapse/expand while editing
+  17. Esc stops editing, node stays selected
+  18. Arrow up/down at text boundary flows to adjacent node
+
+Visual:
+  19. Dark background
+  20. Bullet dots on every node
+  21. Collapsed nodes have ring around bullet
+  22. Hover shows triangle on parent nodes
+  23. Vertical connector lines
+  24. Selected node highlighted
+  25. Editing node visually distinct
+
+Persistence:
+  26. Refresh page — data persists
+  27. Last item cannot be deleted
+
+- [ ] **Step 3: Final commit**
+
+```bash
+git add -A && git commit -m "feat: zen-outliner v01 complete"
 ```
