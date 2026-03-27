@@ -2,7 +2,40 @@
 
 ## What
 
-A Workflowy clone. Infinite-nesting outliner. Dark mode only. Get to working state, then refine.
+An outliner inspired by Workflowy and Checkvist. Dark mode only.
+Checkvist-style modal editing (normal/insert modes) with Workflowy-feel
+flowing text in insert mode. Plain text only, no rich text in v1.
+
+
+## Interaction Model
+
+Three modes (v1 implements first two):
+
+Normal mode (default on page load):
+  Vim-style single-key commands. j/k navigate, dd delete, Tab indent.
+  contentEditable is present on every node but keyboard handler
+  intercepts all keys via preventDefault(). Nothing is editable.
+
+Insert mode (press i, or click into node text):
+  Workflowy-like flowing text. Type freely in the focused node.
+  contentEditable receives keystrokes. Enter splits node at cursor.
+  Backspace at start merges with previous node. Arrow keys at
+  boundaries flow to adjacent nodes seamlessly. Only one node is
+  "active" at a time but the transition between nodes is invisible.
+  Esc returns to normal mode.
+
+Visual mode (future, not v1):
+  Multi-node item selection. Triggered by selection gesture.
+  Item-level operations (move, delete, indent group).
+
+Technical approach:
+  contentEditable attribute is on every node div, always.
+  Mode flag in store controls keyboard handler behavior.
+  In normal mode: preventDefault() on all text keys.
+  In insert mode: let keys through to contentEditable.
+  No rich text library needed. Content stored as plain strings.
+  Rich text (WYSIWYG or markdown) is a v2 component-level change
+  that does not affect store, model, or mode architecture.
 
 ## Stack
 
