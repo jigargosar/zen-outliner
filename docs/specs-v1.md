@@ -1,5 +1,9 @@
 # Zen Outliner — Specification
 
+This spec captures known behaviors, not all possible behaviors.
+It is not exhaustive. New items should be added retroactively
+as behaviors are discovered, decided, or clarified.
+
 ## Modes
 
 1. The app starts in nav mode
