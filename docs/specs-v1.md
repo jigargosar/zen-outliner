@@ -10,51 +10,51 @@
 
 ## Navigation
 
-6. Up moves focus to the previous visible node
-7. Down moves focus to the next visible node
-8. Collapsed children are not visible and are skipped
-9. Left collapses the focused node if it has children and is expanded
-10. Left moves focus to the parent if the node is collapsed or has no children
-11. Left does nothing if the node is at the zoom boundary root
-12. Right expands the focused node if it is collapsed
-13. Right moves focus to the first child if the node is expanded
-14. Right does nothing if the node has no children
-15. Click focuses the clicked node and switches to nav mode
-16. Double-click focuses the clicked node and enters edit mode
-17. Clicking a bullet toggles collapse on nodes with children
+6. Focus moves to the sensible default position after every action
+7. Up moves focus to the previous visible node
+8. Down moves focus to the next visible node
+9. Collapsed children are not visible and are skipped
+10. Left collapses the focused node if it has children and is expanded
+11. Left moves focus to the parent if the node is collapsed or has no children
+12. Left does nothing if the node is at the zoom boundary root
+13. Right expands the focused node if it is collapsed
+14. Right moves focus to the first child if the node is expanded
+15. Right does nothing if the node has no children
+16. Click focuses the clicked node and switches to nav mode
+17. Double-click focuses the clicked node and enters edit mode
+18. Clicking a bullet toggles collapse on nodes with children
 
 ## Indent and Outdent
 
-18. Tab indents the focused node under the sibling above it
-19. Tab does nothing if the node is the first sibling
-20. Tab auto-expands the target parent if it was collapsed
-21. Tab preserves all children — they move with the node
-22. Shift+Tab outdents the focused node, placing it after its former parent
-23. Shift+Tab does nothing if the node is at root level
-24. Shift+Tab does nothing if the node is at the zoom boundary
-25. Shift+Tab preserves all children — they move with the node
-26. Tab and Shift+Tab also work in edit mode
+19. Tab indents the focused node under the sibling above it
+20. Tab does nothing if the node is the first sibling
+21. Tab auto-expands the target parent if it was collapsed
+22. Tab preserves all children — they move with the node
+23. Shift+Tab outdents the focused node, placing it after its former parent
+24. Shift+Tab does nothing if the node is at root level
+25. Shift+Tab does nothing if the node is at the zoom boundary
+26. Shift+Tab preserves all children — they move with the node
+27. Tab and Shift+Tab also work in edit mode
 
 ## Reorder
 
-27. Alt+Up swaps the focused node with the sibling above it
-28. Alt+Up does nothing if the node is the first sibling
-29. Alt+Down swaps the focused node with the sibling below it
-30. Alt+Down does nothing if the node is the last sibling
-31. Reordering preserves all children — they move with the node
+28. Alt+Up swaps the focused node with the sibling above it
+29. Alt+Up does nothing if the node is the first sibling
+30. Alt+Down swaps the focused node with the sibling below it
+31. Alt+Down does nothing if the node is the last sibling
+32. Reordering preserves all children — they move with the node
 
 ## Editing
 
-32. Enter enters edit mode on the focused node
-33. Enter in edit mode saves the text and creates a new empty sibling below
-34. Enter on empty text in edit mode deletes the node and returns to nav mode
-35. Escape in edit mode discards changes and returns to nav mode
-36. Editing only triggers undo if the text actually changed
+33. Enter enters edit mode on the focused node
+34. Enter in edit mode saves the text and creates a new empty sibling below
+35. Enter on empty text in edit mode deletes the node and returns to nav mode
+36. Escape in edit mode discards changes and returns to nav mode
+37. Editing only triggers undo if the text actually changed
 
 ## Delete
 
-37. Backspace or Delete removes the focused node and all its descendants
-38. Focus moves to the node above after deletion
+38. Backspace or Delete removes the focused node and all its descendants
 39. Delete does nothing if it is the last remaining node
 
 ## Mark Done
