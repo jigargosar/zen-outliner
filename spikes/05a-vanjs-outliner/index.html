@@ -6,13 +6,602 @@
   <title>Spike 05a — VanJS Outliner</title>
   <script src="https://cdn.jsdelivr.net/npm/vanjs-core@1.5.5/dist/van-1.5.5.nomodule.min.js"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-  <style>
-    .collapsed > ul { display: none; }
-  </style>
 </head>
 <body>
   <div id="app"></div>
   <script>
+    const {div, ul, li, span, button, input: inp, h2, table, tbody, tr, td} = van.tags
+
+    // --- Reactive Node ---
+
+    let nextId = 1
+
+    const makeNode = (text = '', children = []) => ({
+      id: nextId++,
+      text: van.state(text),
+      collapsed: van.state(false),
+      done: van.state(false),
+      children: van.state(children),
+    })
+
+    // --- App State ---
+
+    const focusId = van.state(null)
+    const mode = van.state('nav')      // 'nav' | 'edit'
+    const zoomStack = van.state([])     // array of node ids
+    const showHelp = van.state(false)
+    const undoStack = van.state([])
+    const redoStack = van.state([])
+    const navHistory = van.state([])    // past focus positions
+    const navFuture = van.state([])     // forward focus positions
+    const searchQuery = van.state('')
+    const searchActive = van.state(false)
+
+    let items = van.state([])
+
+    // --- Tree Helpers ---
+
+    const allNodes = () => {
+      const map = new Map()
+      const walk = nodes => nodes.forEach(n => { map.set(n.id, n); walk(n.children.val) })
+      walk(items.val)
+      return map
+    }
+
+    const findNode = id => allNodes().get(id)
+
+    const findParent = id => {
+      const search = (nodes, parent) => {
+        for (const n of nodes) {
+          if (n.id === id) return parent
+          const found = search(n.children.val, n)
+          if (found) return found
+        }
+        return null
+      }
+      return search(items.val, null)
+    }
+
+    const siblings = id => {
+      const p = findParent(id)
+      return p ? p.children : items
+    }
+
+    const zoomRoot = () => {
+      const stack = zoomStack.val
+      if (!stack.length) return items.val
+      const node = findNode(stack[stack.length - 1])
+      return node ? node.children.val : items.val
+    }
+
+    const flatVisible = () => {
+      const result = []
+      const walk = (nodes, depth) => nodes.forEach(n => {
+        result.push({ node: n, depth })
+        if (!n.collapsed.val) walk(n.children.val, depth + 1)
+      })
+      walk(zoomRoot(), 0)
+      return result
+    }
+
+    // --- Undo/Redo ---
+
+    const serialize = nodes => nodes.map(n => ({
+      t: n.text.val, c: n.collapsed.val, d: n.done.val,
+      ch: serialize(n.children.val)
+    }))
+
+    const deserialize = data => data.map(d => {
+      const n = makeNode(d.t)
+      n.collapsed.val = d.c || false
+      n.done.val = d.d || false
+      n.children.val = d.ch ? deserialize(d.ch) : []
+      return n
+    })
+
+    const snapshot = () => JSON.stringify(serialize(items.val))
+
+    const pushUndo = () => {
+      undoStack.val = [...undoStack.val, { snap: snapshot(), focusId: focusId.val }]
+      redoStack.val = []
+    }
+
+    const undo = () => {
+      const stack = undoStack.val
+      if (!stack.length) return
+      redoStack.val = [...redoStack.val, { snap: snapshot(), focusId: focusId.val }]
+      const entry = stack[stack.length - 1]
+      undoStack.val = stack.slice(0, -1)
+      items.val = deserialize(JSON.parse(entry.snap))
+      focusId.val = entry.focusId
+    }
+
+    const redo = () => {
+      const stack = redoStack.val
+      if (!stack.length) return
+      undoStack.val = [...undoStack.val, { snap: snapshot(), focusId: focusId.val }]
+      const entry = stack[stack.length - 1]
+      redoStack.val = stack.slice(0, -1)
+      items.val = deserialize(JSON.parse(entry.snap))
+      focusId.val = entry.focusId
+    }
+
+    // --- Navigation History ---
+
+    const navPush = id => {
+      if (focusId.val != null) {
+        navHistory.val = [...navHistory.val, focusId.val]
+        navFuture.val = []
+      }
+    }
+
+    const navBack = () => {
+      const hist = navHistory.val
+      if (!hist.length) return
+      navFuture.val = [...navFuture.val, focusId.val]
+      focusId.val = hist[hist.length - 1]
+      navHistory.val = hist.slice(0, -1)
+    }
+
+    const navForward = () => {
+      const fut = navFuture.val
+      if (!fut.length) return
+      navHistory.val = [...navHistory.val, focusId.val]
+      focusId.val = fut[fut.length - 1]
+      navFuture.val = fut.slice(0, -1)
+    }
+
+    // --- Actions ---
+
+    const moveFocus = delta => {
+      const vis = flatVisible()
+      const idx = vis.findIndex(v => v.node.id === focusId.val)
+      const next = vis[idx + delta]
+      if (next) focusId.val = next.node.id
+    }
+
+    const indent = () => {
+      const sibs = siblings(focusId.val)
+      const arr = sibs.val
+      const idx = arr.findIndex(n => n.id === focusId.val)
+      if (idx <= 0) return
+      pushUndo()
+      const node = arr[idx]
+      const prev = arr[idx - 1]
+      prev.collapsed.val = false
+      prev.children.val = [...prev.children.val, node]
+      sibs.val = arr.filter((_, i) => i !== idx)
+    }
+
+    const outdent = () => {
+      const parent = findParent(focusId.val)
+      if (!parent) return
+      const boundary = zoomStack.val.length ? zoomStack.val[zoomStack.val.length - 1] : null
+      if (parent.id === boundary) return
+      pushUndo()
+      const node = findNode(focusId.val)
+      const grandSibs = siblings(parent.id)
+      const parentIdx = grandSibs.val.findIndex(n => n.id === parent.id)
+      parent.children.val = parent.children.val.filter(n => n.id !== focusId.val)
+      const arr = [...grandSibs.val]
+      arr.splice(parentIdx + 1, 0, node)
+      grandSibs.val = arr
+    }
+
+    const reorder = delta => {
+      const sibs = siblings(focusId.val)
+      const arr = [...sibs.val]
+      const idx = arr.findIndex(n => n.id === focusId.val)
+      const newIdx = idx + delta
+      if (newIdx < 0 || newIdx >= arr.length) return
+      pushUndo()
+      ;[arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]]
+      sibs.val = arr
+    }
+
+    const deleteNode = () => {
+      const vis = flatVisible()
+      if (vis.length <= 1) return
+      pushUndo()
+      const idx = vis.findIndex(v => v.node.id === focusId.val)
+      const target = idx > 0 ? vis[idx - 1] : vis[idx + 1]
+      const sibs = siblings(focusId.val)
+      sibs.val = sibs.val.filter(n => n.id !== focusId.val)
+      focusId.val = target.node.id
+    }
+
+    const exitEdit = () => {
+      const el = document.querySelector(`[data-input="${focusId.val}"]`)
+      const node = findNode(focusId.val)
+      if (node && el) {
+        if (el.value !== node.text.val) {
+          pushUndo()
+          node.text.val = el.value
+        }
+      }
+      mode.val = 'nav'
+      return node?.text.val || ''
+    }
+
+    const toggleDone = () => {
+      const node = findNode(focusId.val)
+      if (!node) return
+      pushUndo()
+      node.done.val = !node.done.val
+    }
+
+    // --- Zoom ---
+
+    const zoomIn = () => {
+      const node = findNode(focusId.val)
+      if (!node || !node.children.val.length) return
+      navPush(focusId.val)
+      zoomStack.val = [...zoomStack.val, node.id]
+      focusId.val = node.children.val[0].id
+    }
+
+    const zoomOut = () => {
+      if (!zoomStack.val.length) return
+      const id = zoomStack.val[zoomStack.val.length - 1]
+      zoomStack.val = zoomStack.val.slice(0, -1)
+      focusId.val = id
+    }
+
+    const zoomTo = idx => {
+      if (idx < 0) zoomStack.val = []
+      else zoomStack.val = zoomStack.val.slice(0, idx + 1)
+      const vis = flatVisible()
+      if (vis.length) focusId.val = vis[0].node.id
+    }
+
+    // --- Search ---
+
+    const searchMatches = () => {
+      const q = searchQuery.val.toLowerCase().trim()
+      if (!q) return []
+      const results = []
+      const walk = nodes => nodes.forEach(n => {
+        if (n.text.val.toLowerCase().includes(q)) results.push(n.id)
+        walk(n.children.val)
+      })
+      walk(items.val)
+      return results
+    }
+
+    const nextMatch = delta => {
+      const matches = searchMatches()
+      if (!matches.length) return
+      const idx = matches.indexOf(focusId.val)
+      const next = idx < 0 ? 0 : (idx + delta + matches.length) % matches.length
+      focusId.val = matches[next]
+    }
+
+    // --- View: Flat Rendering ---
+
+    const renderRow = (node, depth) => {
+      const focused = van.derive(() => node.id === focusId.val)
+      const editing = van.derive(() => focused.val && mode.val === 'edit')
+      const hasChildren = van.derive(() => node.children.val.length > 0)
+      const isMatch = van.derive(() => {
+        const q = searchQuery.val.toLowerCase().trim()
+        return q && node.text.val.toLowerCase().includes(q)
+      })
+
+      const bullet = () => hasChildren.val
+        ? (node.collapsed.val ? '▶' : '▼')
+        : '•'
+
+      const borderStyle = () => editing.val
+        ? 'border-amber-400 bg-amber-50'
+        : focused.val
+          ? 'border-blue-500 bg-blue-50/50'
+          : 'border-transparent'
+
+      const textClasses = () => {
+        let c = 'cursor-default'
+        if (node.done.val) c += ' line-through text-gray-400'
+        if (isMatch.val) c += ' bg-yellow-200/50'
+        return c
+      }
+
+      return div(
+        {
+          class: 'flex items-center',
+          style: () => `padding-left: ${depth * 24}px`,
+          'data-id': String(node.id),
+        },
+        span(
+          {
+            class: () => `w-5 h-5 flex items-center justify-center cursor-pointer select-none text-xs ${hasChildren.val ? 'text-gray-600' : 'text-gray-400'}`,
+            onclick: () => {
+              if (hasChildren.val) { node.collapsed.val = !node.collapsed.val }
+            },
+          },
+          bullet
+        ),
+        div(
+          { class: () => `flex-1 px-1.5 py-0.5 border-l-2 ${borderStyle()}` },
+          () => editing.val
+            ? inp({
+                class: 'w-full outline-none bg-transparent font-[inherit] text-[inherit]',
+                value: node.text.val,
+                'data-input': String(node.id),
+                oncreate: el => el.focus(),
+              })
+            : span({ class: textClasses }, node.text)
+        )
+      )
+    }
+
+    // --- View: App Shell ---
+
+    const breadcrumbView = () => {
+      const stack = zoomStack.val
+      if (!stack.length) return null
+      const crumbs = [
+        span({ class: 'cursor-pointer text-blue-500 hover:underline', onclick: () => zoomTo(-1) }, 'Home')
+      ]
+      stack.forEach((id, i) => {
+        const node = findNode(id)
+        crumbs.push(' / ')
+        crumbs.push(span(
+          { class: 'cursor-pointer text-blue-500 hover:underline', onclick: () => zoomTo(i) },
+          node ? node.text.val : ''
+        ))
+      })
+      return div({ class: 'text-sm text-gray-400 mb-3' }, ...crumbs)
+    }
+
+    const searchBar = () => {
+      if (!searchActive.val) return null
+      const matches = searchMatches()
+      return div({ class: 'mb-3 flex items-center gap-2' },
+        inp({
+          class: 'border border-gray-300 rounded px-2 py-1 text-sm outline-none flex-1',
+          placeholder: 'Search...',
+          value: searchQuery.val,
+          oninput: e => { searchQuery.val = e.target.value },
+          onkeydown: e => {
+            if (e.key === 'Enter') { nextMatch(e.shiftKey ? -1 : 1) }
+            if (e.key === 'Escape') { searchActive.val = false; searchQuery.val = '' }
+          },
+          oncreate: el => el.focus(),
+        }),
+        span({ class: 'text-xs text-gray-400' }, () => {
+          const m = searchMatches()
+          return m.length ? `${m.length} match${m.length > 1 ? 'es' : ''}` : 'no matches'
+        })
+      )
+    }
+
+    const helpView = () => {
+      if (!showHelp.val) return null
+      const shortcuts = [
+        ['Navigation', [['↑ / ↓', 'Move focus'], ['← / →', 'Collapse/expand or parent/child'], ['z', 'Zoom in'], ['Esc', 'Zoom out']]],
+        ['Editing',    [['Enter', 'Edit / save+new / delete if empty'], ['Esc', 'Stop editing'], ['Dbl-click', 'Edit any item']]],
+        ['Organizing', [['Tab', 'Indent'], ['Shift+Tab', 'Outdent'], ['Alt+↑/↓', 'Reorder']]],
+        ['Actions',    [['Space', 'Toggle done'], ['Backspace', 'Delete'], ['Ctrl+Z', 'Undo'], ['Ctrl+Shift+Z', 'Redo']]],
+        ['Navigation', [['Alt+←/→', 'Back/forward'], ['Ctrl+F', 'Search'], ['z', 'Zoom in'], ['Esc', 'Zoom out']]],
+      ]
+      const rows = shortcuts.flatMap(([section, keys]) => [
+        tr(td({ colSpan: 2, class: 'pt-3 pb-1 font-semibold text-gray-500 border-b border-gray-100' }, section)),
+        ...keys.map(([key, desc]) =>
+          tr(td({ class: 'py-1 pr-4 text-gray-400 whitespace-nowrap' }, key), td(desc)))
+      ])
+      return div(
+        { class: 'fixed inset-0 bg-black/30 flex items-center justify-center', onclick: e => { if (e.target === e.currentTarget) showHelp.val = false } },
+        div({ class: 'bg-white rounded-lg p-6 max-w-md shadow-xl' },
+          h2({ class: 'text-lg font-semibold mb-3' }, 'Keyboard Shortcuts'),
+          table({ class: 'w-full text-sm' }, tbody(...rows)),
+          button({ class: 'mt-4 px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-sm cursor-pointer', onclick: () => { showHelp.val = false } }, 'Close')
+        )
+      )
+    }
+
+    const toolbarView = () =>
+      div({ class: 'fixed bottom-3 right-3 flex items-center gap-2' },
+        () => span({ class: 'text-xs text-gray-400' },
+          undoStack.val.length ? `${undoStack.val.length} undo` : ''),
+        button({ class: 'px-2 py-1 rounded text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 cursor-pointer', onclick: () => {
+          localStorage.removeItem('spike05a')
+          items.val = defaultData()
+          focusId.val = items.val[0].id
+          undoStack.val = []; redoStack.val = []
+          zoomStack.val = []; navHistory.val = []; navFuture.val = []
+        }}, 'Reset'),
+        button({ class: 'px-2 py-1 rounded text-xs text-gray-400 hover:text-blue-500 hover:bg-blue-50 cursor-pointer', onclick: () => { showHelp.val = true } }, '?'),
+        div({ class: () => `px-3 py-1 rounded text-xs text-white ${mode.val === 'edit' ? 'bg-amber-500' : 'bg-gray-500'}` },
+          () => mode.val === 'edit' ? 'EDIT' : 'NAV')
+      )
+
+    // --- Main Render ---
+
+    const appView = () =>
+      div({ class: 'font-sans text-gray-800 max-w-3xl mx-auto p-8' },
+        breadcrumbView,
+        searchBar,
+        () => {
+          const vis = flatVisible()
+          return div({ class: 'space-y-px' }, ...vis.map(v => renderRow(v.node, v.depth)))
+        },
+        toolbarView,
+        helpView,
+      )
+
+    van.add(document.getElementById('app'), appView)
+
+    // Focus management
+    van.derive(() => {
+      const id = focusId.val
+      mode.val // also re-run on mode change
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-input="${id}"]`)
+        if (el && document.activeElement !== el) el.focus()
+      })
+    })
+
+    // Auto-save
+    van.derive(() => {
+      items.val // track
+      focusId.val
+      localStorage.setItem('spike05a', JSON.stringify({
+        items: serialize(items.val),
+        focusId: focusId.val,
+      }))
+    })
+
+    // --- Keyboard ---
+
+    document.addEventListener('keydown', e => {
+      if (showHelp.val) {
+        if (e.key === 'Escape') showHelp.val = false
+        return
+      }
+
+      if (searchActive.val) return // search bar handles its own keys
+
+      if (e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) { e.preventDefault(); redo(); return }
+      if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); return }
+      if (e.key === 'f' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); searchActive.val = true; return }
+
+      if (e.key === 'ArrowLeft' && e.altKey) { e.preventDefault(); navBack(); return }
+      if (e.key === 'ArrowRight' && e.altKey) { e.preventDefault(); navForward(); return }
+
+      if (mode.val === 'edit') return handleEditKey(e)
+
+      if (e.key === 'ArrowUp' && !e.altKey) { e.preventDefault(); moveFocus(-1) }
+      if (e.key === 'ArrowDown' && !e.altKey) { e.preventDefault(); moveFocus(1) }
+      if (e.key === 'ArrowUp' && e.altKey) { e.preventDefault(); reorder(-1) }
+      if (e.key === 'ArrowDown' && e.altKey) { e.preventDefault(); reorder(1) }
+
+      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); indent() }
+      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); outdent() }
+
+      if (e.key === 'Enter') { e.preventDefault(); mode.val = 'edit' }
+      if (e.key === ' ') { e.preventDefault(); toggleDone() }
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        const node = findNode(focusId.val)
+        if (node?.children.val.length && !node.collapsed.val) node.collapsed.val = true
+        else {
+          const p = findParent(focusId.val)
+          const boundary = zoomStack.val.length ? zoomStack.val[zoomStack.val.length - 1] : null
+          if (p && p.id !== boundary) { navPush(focusId.val); focusId.val = p.id }
+        }
+      }
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        const node = findNode(focusId.val)
+        if (node?.collapsed.val) node.collapsed.val = false
+        else if (node?.children.val.length) { navPush(focusId.val); focusId.val = node.children.val[0].id }
+      }
+
+      if (e.key === 'z' && !e.ctrlKey && !e.metaKey) zoomIn()
+      if (e.key === 'Escape') zoomOut()
+      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteNode() }
+    })
+
+    const handleEditKey = e => {
+      if (e.key === 'Escape') { e.preventDefault(); exitEdit() }
+
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const text = exitEdit()
+        if (text.trim() === '') { deleteNode(); return }
+        pushUndo()
+        const sibs = siblings(focusId.val)
+        const idx = sibs.val.findIndex(n => n.id === focusId.val)
+        const newNode = makeNode()
+        const arr = [...sibs.val]
+        arr.splice(idx + 1, 0, newNode)
+        sibs.val = arr
+        focusId.val = newNode.id
+        mode.val = 'edit'
+      }
+
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        exitEdit()
+        if (e.shiftKey) outdent(); else indent()
+        mode.val = 'edit'
+      }
+    }
+
+    // --- Click ---
+
+    document.addEventListener('click', e => {
+      const row = e.target.closest('[data-id]')
+      if (row) {
+        const id = Number(row.dataset.id)
+        if (mode.val === 'edit') exitEdit()
+        navPush(focusId.val)
+        focusId.val = id
+        mode.val = 'nav'
+      }
+    })
+
+    document.addEventListener('dblclick', e => {
+      const row = e.target.closest('[data-id]')
+      if (row) {
+        focusId.val = Number(row.dataset.id)
+        mode.val = 'edit'
+      }
+    })
+
+    // --- Default Data ---
+
+    const mk = (text, children = []) => {
+      const n = makeNode(text)
+      n.children.val = children
+      return n
+    }
+
+    const defaultData = () => [
+      mk('Welcome to Zen Outliner', [
+        mk('This list IS the documentation — try the shortcuts below'),
+        mk('Press ? for the full keyboard shortcut reference'),
+      ]),
+      mk('Navigation', [
+        mk('↑ / ↓ — move focus'), mk('← — collapse or move to parent'),
+        mk('→ — expand or move to first child'), mk('z — zoom into subtree'),
+        mk('Escape — zoom out'), mk('Alt+← / Alt+→ — back/forward history'),
+      ]),
+      mk('Editing', [
+        mk('Enter — edit focused item'), mk('Enter (with text) — save + new sibling'),
+        mk('Enter (empty) — delete + back to nav'), mk('Escape — stop editing'),
+      ]),
+      mk('Organizing', [
+        mk('Tab — indent'), mk('Shift+Tab — outdent'),
+        mk('Alt+↑/↓ — reorder'), mk('Space — toggle done'),
+      ]),
+      mk('Undo & Search', [
+        mk('Ctrl+Z — undo'), mk('Ctrl+Shift+Z — redo'),
+        mk('Ctrl+F — search'), mk('Enter/Shift+Enter — next/prev match'),
+      ]),
+    ]
+
+    // --- Load ---
+
+    const loadData = () => {
+      const d = localStorage.getItem('spike05a')
+      if (d) {
+        try {
+          const parsed = JSON.parse(d)
+          items.val = deserialize(parsed.items)
+          focusId.val = parsed.focusId || items.val[0]?.id
+        } catch {
+          items.val = defaultData()
+          focusId.val = items.val[0].id
+        }
+      } else {
+        items.val = defaultData()
+        focusId.val = items.val[0].id
+      }
+    }
+
+    loadData()
   </script>
 </body>
 </html>
