@@ -77,31 +77,30 @@
 
 ## Navigation History
 
-52. Significant navigation pushes the current position to history
-53. Alt+Left goes back to the previous position in history
-54. Alt+Right goes forward to the next position in history
-55. Back does nothing at the start of history
-56. Forward does nothing at the end of history
+52. Navigation history tracks focus changes and other sensible events, and does not capture bursts
+53. Alt+Left goes back in history
+54. Alt+Right goes forward in history
 
 ## Undo and Redo
 
-57. Ctrl+Z undoes the last mutation, restoring tree state and focus position
-58. Ctrl+Shift+Z redoes the last undone mutation
-59. Any new mutation after undo clears the redo stack
-60. Ctrl+Z and Ctrl+Shift+Z work in all modes
+55. Ctrl+Z undoes the last mutation, restoring tree state and focus position
+56. Ctrl+Shift+Z redoes the last undone mutation
+57. Any new mutation after undo clears the redo stack
+58. Ctrl+Z and Ctrl+Shift+Z work in all modes
 
 ## Search
 
-61. / opens the search input
-62. Typing filters visible nodes to those matching the query
-63. Matching text is highlighted in the results
-64. Ancestors of matching nodes stay visible to preserve tree context
-65. Enter jumps to the first match and closes search
-66. Escape closes search, clears the filter, and restores the full view
-67. Search covers the entire document, not just the zoom scope
+59. / opens the search input
+60. Typing filters visible nodes to those matching the query
+61. Matching text is highlighted in the results
+62. Ancestors of matching nodes stay visible to preserve tree context
+63. Enter jumps to the first match and closes search
+64. Escape closes search, clears the filter, and restores the full view
+65. Search covers the entire document, not just the zoom scope
 
 ## Persistence
 
-68. The tree auto-saves to localStorage on every state change
-69. The tree loads from localStorage on startup
-70. If storage is empty or corrupt, default data is loaded
+66. The tree auto-saves to localStorage on every state change
+67. The tree loads from localStorage on startup
+68. If storage is empty, corrupt, or contains no nodes, default data is loaded
+69. First launch shows a welcome list that documents the keyboard shortcuts
