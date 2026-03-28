@@ -1,10 +1,10 @@
-# Zen Outliner — Specification
+Zen Outliner — Specification
 
 This spec captures known behaviors, not all possible behaviors.
 It is not exhaustive. New items should be added retroactively
 as behaviors are discovered, decided, or clarified.
 
-## Modes
+# Modes
 
 1. The app starts in nav mode
 2. Nav mode is for navigating and operating on nodes
@@ -12,7 +12,7 @@ as behaviors are discovered, decided, or clarified.
 4. Search mode is for filtering and jumping to nodes
 5. The current mode is always visible in the UI
 
-## Navigation
+# Navigation
 
 6. Focus moves to the sensible default position after every action
 7. The focused node is always visible in the current view, unless the view is empty
@@ -29,7 +29,7 @@ as behaviors are discovered, decided, or clarified.
 18. Double-click focuses the clicked node and enters edit mode
 19. Clicking a bullet toggles collapse on nodes with children
 
-## Indent and Outdent
+# Indent and Outdent
 
 20. Tab indents the focused node under the sibling above it
 21. Tab does nothing if the node is the first sibling
@@ -41,7 +41,7 @@ as behaviors are discovered, decided, or clarified.
 27. Shift+Tab preserves all children — they move with the node
 28. Tab and Shift+Tab also work in edit mode
 
-## Reorder
+# Reorder
 
 29. Alt+Up swaps the focused node with the sibling above it
 30. Alt+Up does nothing if the node is the first sibling
@@ -49,7 +49,7 @@ as behaviors are discovered, decided, or clarified.
 32. Alt+Down does nothing if the node is the last sibling
 33. Reordering preserves all children — they move with the node
 
-## Editing
+# Editing
 
 34. Enter enters edit mode on the focused node
 35. Enter in edit mode saves the text and creates a new empty sibling below
@@ -58,17 +58,17 @@ as behaviors are discovered, decided, or clarified.
 38. Escape in edit mode discards changes and returns to nav mode
 39. Editing only triggers undo if the text actually changed
 
-## Delete
+# Delete
 
 40. Backspace or Delete removes the focused node and all its descendants
 41. Delete does nothing if it is the last remaining node
 
-## Mark Done
+# Mark Done
 
 42. Space toggles done on the focused node
 43. Done nodes show strikethrough and dimmed text
 
-## Zoom
+# Zoom
 
 44. z zooms into the focused node, making it the view root
 45. z does nothing if the focused node has no children
@@ -78,20 +78,20 @@ as behaviors are discovered, decided, or clarified.
 49. Clicking a breadcrumb zooms to that level
 50. Outdent cannot escape the zoom boundary
 
-## Navigation History
+# Navigation History
 
 51. Navigation history tracks focus changes and other sensible events, and does not capture bursts
 52. Alt+Left goes back in history
 53. Alt+Right goes forward in history
 
-## Undo and Redo
+# Undo and Redo
 
 54. Ctrl+Z undoes the last mutation, restoring tree state and focus position
 55. Ctrl+Shift+Z redoes the last undone mutation
 56. Any new mutation after undo clears the redo stack
 57. Ctrl+Z and Ctrl+Shift+Z work in all modes
 
-## Search
+# Search
 
 58. / opens the search input
 59. Typing filters visible nodes to those matching the query
@@ -101,7 +101,7 @@ as behaviors are discovered, decided, or clarified.
 63. Escape closes search, clears the filter, and restores the full view
 64. Search covers the entire document, not just the zoom scope
 
-## Persistence
+# Persistence
 
 65. The tree auto-saves to localStorage on every state change
 66. The tree loads from localStorage on startup
