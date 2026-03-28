@@ -46,61 +46,58 @@
 ## Editing
 
 32. Enter enters edit mode on the focused node
-33. The cursor is placed at the end of the text
-34. Enter in edit mode saves the text and creates a new empty sibling below
-35. The new sibling is created at the same level and enters edit mode
-36. Enter on empty text in edit mode deletes the node and returns to nav mode
-37. Escape in edit mode discards changes and returns to nav mode
-38. Editing only triggers undo if the text actually changed
+33. Enter in edit mode saves the text and creates a new empty sibling below
+34. Enter on empty text in edit mode deletes the node and returns to nav mode
+35. Escape in edit mode discards changes and returns to nav mode
+36. Editing only triggers undo if the text actually changed
 
 ## Delete
 
-39. Backspace or Delete removes the focused node and all its descendants
-40. Focus moves to the node above after deletion
-41. Focus moves to the node below if there is no node above
-42. Delete does nothing if it is the last remaining node
+37. Backspace or Delete removes the focused node and all its descendants
+38. Focus moves to the node above after deletion
+39. Delete does nothing if it is the last remaining node
 
 ## Mark Done
 
-43. Space toggles done on the focused node
-44. Done nodes show strikethrough and dimmed text
+40. Space toggles done on the focused node
+41. Done nodes show strikethrough and dimmed text
 
 ## Zoom
 
-45. z zooms into the focused node, making it the view root
-46. z does nothing if the focused node has no children
-47. Escape zooms out to the parent of the current zoom root
-48. Escape does nothing if already at the document root
-49. A breadcrumb trail shows the path from Home to the current zoom root
-50. Clicking a breadcrumb zooms to that level
-51. Outdent cannot escape the zoom boundary
+42. z zooms into the focused node, making it the view root
+43. z does nothing if the focused node has no children
+44. Escape zooms out to the parent of the current zoom root
+45. Escape does nothing if already at the document root
+46. A breadcrumb trail shows the path from Home to the current zoom root
+47. Clicking a breadcrumb zooms to that level
+48. Outdent cannot escape the zoom boundary
 
 ## Navigation History
 
-52. Navigation history tracks focus changes and other sensible events, and does not capture bursts
-53. Alt+Left goes back in history
-54. Alt+Right goes forward in history
+49. Navigation history tracks focus changes and other sensible events, and does not capture bursts
+50. Alt+Left goes back in history
+51. Alt+Right goes forward in history
 
 ## Undo and Redo
 
-55. Ctrl+Z undoes the last mutation, restoring tree state and focus position
-56. Ctrl+Shift+Z redoes the last undone mutation
-57. Any new mutation after undo clears the redo stack
-58. Ctrl+Z and Ctrl+Shift+Z work in all modes
+52. Ctrl+Z undoes the last mutation, restoring tree state and focus position
+53. Ctrl+Shift+Z redoes the last undone mutation
+54. Any new mutation after undo clears the redo stack
+55. Ctrl+Z and Ctrl+Shift+Z work in all modes
 
 ## Search
 
-59. / opens the search input
-60. Typing filters visible nodes to those matching the query
-61. Matching text is highlighted in the results
-62. Ancestors of matching nodes stay visible to preserve tree context
-63. Enter jumps to the first match and closes search
-64. Escape closes search, clears the filter, and restores the full view
-65. Search covers the entire document, not just the zoom scope
+56. / opens the search input
+57. Typing filters visible nodes to those matching the query
+58. Matching text is highlighted in the results
+59. Ancestors of matching nodes stay visible to preserve tree context
+60. Enter jumps to the first match and closes search
+61. Escape closes search, clears the filter, and restores the full view
+62. Search covers the entire document, not just the zoom scope
 
 ## Persistence
 
-66. The tree auto-saves to localStorage on every state change
-67. The tree loads from localStorage on startup
-68. If storage is empty, corrupt, or contains no nodes, default data is loaded
-69. First launch shows a welcome list that documents the keyboard shortcuts
+63. The tree auto-saves to localStorage on every state change
+64. The tree loads from localStorage on startup
+65. If storage is empty, corrupt, or contains no nodes, default data is loaded
+66. First launch shows a welcome list that documents the keyboard shortcuts
