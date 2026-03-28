@@ -6,13 +6,613 @@
   <title>Spike 05b — VanJS Outliner</title>
   <script src="https://cdn.jsdelivr.net/npm/vanjs-core@1.5.5/dist/van-1.5.5.nomodule.min.js"></script>
   <script type="module" src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-  <style>
-    .collapsed > ul { display: none; }
-  </style>
 </head>
 <body>
-  <div id="app"></div>
   <script>
+    const {div, span, input: inp, button} = van.tags
+
+    // --- Data Model (reactive nodes) ---
+
+    let nextId = 1
+
+    const makeNode = (text = '', children = []) => ({
+      id: nextId++,
+      text: van.state(text),
+      collapsed: van.state(false),
+      done: van.state(false),
+      children: van.state(children),
+    })
+
+    const mk = (text, kids = []) => makeNode(text, kids.map(k =>
+      typeof k === 'string' ? makeNode(k) : k
+    ))
+
+    // --- App State ---
+
+    const focusId = van.state(1)
+    const mode = van.state('nav')
+    const ver = van.state(0)
+    const searchQuery = van.state('')
+    const searchActive = van.state(false)
+
+    let items = []
+    let zoomStack = []
+    let undoStack = []
+    let redoStack = []
+    let navHistory = []
+    let navIndex = -1
+
+    const bump = () => ver.val++
+
+    // --- Serialization ---
+
+    const serialize = nodes => nodes.map(n => ({
+      t: n.text.val, c: n.collapsed.val, d: n.done.val,
+      ch: serialize(n.children.val),
+    }))
+
+    const deserialize = data => data.map(d => {
+      const n = makeNode(d.t)
+      n.collapsed.val = d.c || false
+      n.done.val = d.d || false
+      n.children.val = d.ch ? deserialize(d.ch) : []
+      return n
+    })
+
+    // --- Undo / Redo ---
+
+    const snapshot = () => JSON.stringify(serialize(items))
+
+    const pushUndo = () => {
+      undoStack.push({ snap: snapshot(), focusId: focusId.val, zoomStack: [...zoomStack] })
+      if (undoStack.length > 100) undoStack.shift()
+      redoStack = []
+    }
+
+    const restoreSnapshot = entry => {
+      items = deserialize(JSON.parse(entry.snap))
+      zoomStack = entry.zoomStack
+      focusId.val = entry.focusId
+      bump()
+    }
+
+    const undo = () => {
+      if (!undoStack.length) return
+      redoStack.push({ snap: snapshot(), focusId: focusId.val, zoomStack: [...zoomStack] })
+      restoreSnapshot(undoStack.pop())
+    }
+
+    const redo = () => {
+      if (!redoStack.length) return
+      undoStack.push({ snap: snapshot(), focusId: focusId.val, zoomStack: [...zoomStack] })
+      restoreSnapshot(redoStack.pop())
+    }
+
+    // --- Navigation History ---
+
+    const pushNav = id => {
+      if (navHistory[navIndex] === id) return
+      navHistory = navHistory.slice(0, navIndex + 1)
+      navHistory.push(id)
+      navIndex = navHistory.length - 1
+      if (navHistory.length > 200) { navHistory.shift(); navIndex-- }
+    }
+
+    const navBack = () => {
+      if (navIndex <= 0) return
+      navIndex--
+      focusId.val = navHistory[navIndex]
+      bump()
+    }
+
+    const navForward = () => {
+      if (navIndex >= navHistory.length - 1) return
+      navIndex++
+      focusId.val = navHistory[navIndex]
+      bump()
+    }
+
+    // --- Tree Helpers ---
+
+    const findNode = (nodes, id) => {
+      for (const n of nodes) {
+        if (n.id === id) return n
+        const found = findNode(n.children.val, id)
+        if (found) return found
+      }
+      return null
+    }
+
+    const findParent = (nodes, id, parent = null) => {
+      for (const n of nodes) {
+        if (n.id === id) return parent
+        const found = findParent(n.children.val, id, n)
+        if (found) return found
+      }
+      return null
+    }
+
+    const siblings = id => {
+      const p = findParent(items, id)
+      return p ? p.children : { val: items, set(v) { items = v } }
+    }
+
+    const siblingsArr = id => {
+      const p = findParent(items, id)
+      return p ? p.children.val : items
+    }
+
+    const getDepth = (nodes, id, depth = 0) => {
+      for (const n of nodes) {
+        if (n.id === id) return depth
+        const d = getDepth(n.children.val, id, depth + 1)
+        if (d >= 0) return d
+      }
+      return -1
+    }
+
+    const zoomRoot = () => {
+      if (!zoomStack.length) return items
+      const n = findNode(items, zoomStack[zoomStack.length - 1])
+      return n ? n.children.val : items
+    }
+
+    const zoomDepthOffset = () => zoomStack.length ? getDepth(items, zoomStack[zoomStack.length - 1]) + 1 : 0
+
+    const visibleList = () => {
+      const result = []
+      const walk = (nodes, depth) => nodes.forEach(n => {
+        result.push({ node: n, depth })
+        if (!n.collapsed.val) walk(n.children.val, depth + 1)
+      })
+      walk(zoomRoot(), zoomDepthOffset())
+      return result
+    }
+
+    // --- Search ---
+
+    const matchesSearch = (node, query) => {
+      if (!query) return true
+      const q = query.toLowerCase()
+      if (node.text.val.toLowerCase().includes(q)) return true
+      return node.children.val.some(c => matchesSearch(c, q))
+    }
+
+    const filteredVisibleList = () => {
+      const q = searchQuery.val
+      if (!q) return visibleList()
+      const result = []
+      const walk = (nodes, depth) => nodes.forEach(n => {
+        if (!matchesSearch(n, q)) return
+        result.push({ node: n, depth })
+        if (!n.collapsed.val) walk(n.children.val, depth + 1)
+      })
+      walk(zoomRoot(), zoomDepthOffset())
+      return result
+    }
+
+    // --- Actions ---
+
+    const moveFocus = delta => {
+      const vis = filteredVisibleList()
+      const idx = vis.findIndex(v => v.node.id === focusId.val)
+      const next = vis[idx + delta]
+      if (next) {
+        focusId.val = next.node.id
+        pushNav(next.node.id)
+      }
+    }
+
+    const indent = () => {
+      const arr = siblingsArr(focusId.val)
+      const idx = arr.findIndex(n => n.id === focusId.val)
+      if (idx <= 0) return
+      pushUndo()
+      const node = arr[idx]
+      const prev = arr[idx - 1]
+      const p = findParent(items, focusId.val)
+      if (p) p.children.val = arr.filter(n => n.id !== focusId.val)
+      else items = arr.filter(n => n.id !== focusId.val)
+      prev.collapsed.val = false
+      prev.children.val = [...prev.children.val, node]
+      bump()
+    }
+
+    const outdent = () => {
+      const parent = findParent(items, focusId.val)
+      if (!parent) return
+      const boundary = zoomStack.length ? zoomStack[zoomStack.length - 1] : null
+      if (parent.id === boundary) return
+      pushUndo()
+      const node = findNode(items, focusId.val)
+      const idx = parent.children.val.findIndex(n => n.id === focusId.val)
+      parent.children.val = parent.children.val.filter(n => n.id !== focusId.val)
+      const grandParent = findParent(items, parent.id)
+      if (grandParent) {
+        const pIdx = grandParent.children.val.findIndex(n => n.id === parent.id)
+        const arr = [...grandParent.children.val]
+        arr.splice(pIdx + 1, 0, node)
+        grandParent.children.val = arr
+      } else {
+        const pIdx = items.findIndex(n => n.id === parent.id)
+        items.splice(pIdx + 1, 0, node)
+      }
+      bump()
+    }
+
+    const reorder = delta => {
+      const arr = siblingsArr(focusId.val)
+      const idx = arr.findIndex(n => n.id === focusId.val)
+      const newIdx = idx + delta
+      if (newIdx < 0 || newIdx >= arr.length) return
+      pushUndo()
+      const p = findParent(items, focusId.val)
+      const copy = [...arr]
+      ;[copy[idx], copy[newIdx]] = [copy[newIdx], copy[idx]]
+      if (p) p.children.val = copy
+      else items = copy
+      bump()
+    }
+
+    const deleteNode = () => {
+      const vis = filteredVisibleList()
+      if (vis.length <= 1) return
+      pushUndo()
+      const idx = vis.findIndex(v => v.node.id === focusId.val)
+      const target = idx > 0 ? vis[idx - 1] : vis[idx + 1]
+      const p = findParent(items, focusId.val)
+      if (p) p.children.val = p.children.val.filter(n => n.id !== focusId.val)
+      else items = items.filter(n => n.id !== focusId.val)
+      focusId.val = target.node.id
+      bump()
+    }
+
+    const exitEdit = () => {
+      const input = document.querySelector(`[data-input="${focusId.val}"]`)
+      const node = findNode(items, focusId.val)
+      if (node && input) {
+        const newText = input.value
+        if (newText !== node.text.val) {
+          pushUndo()
+          node.text.val = newText
+        }
+      }
+      mode.val = 'nav'
+      return node?.text.val || ''
+    }
+
+    // --- Render (reactive) ---
+
+    const INDENT_PX = 24
+
+    const renderItem = (node, depth, f, m, query) => {
+      const focused = node.id === f
+      const editing = focused && m === 'edit'
+      const hasKids = node.children.val.length > 0
+      const bullet = hasKids ? (node.collapsed.val ? '▶' : '▼') : '•'
+      const border = editing ? 'border-amber-400 bg-amber-50'
+        : focused ? 'border-blue-500 bg-blue-50/50'
+        : 'border-transparent'
+
+      const textContent = node.text.val || '\u00A0'
+      let displayContent
+      if (editing) {
+        displayContent = inp({
+          class: 'w-full outline-none bg-transparent font-[inherit] text-[inherit]',
+          value: node.text.val,
+          'data-input': String(node.id),
+        })
+      } else if (query && node.text.val.toLowerCase().includes(query.toLowerCase())) {
+        const idx = node.text.val.toLowerCase().indexOf(query.toLowerCase())
+        displayContent = span({class: 'cursor-default'},
+          node.text.val.slice(0, idx),
+          span({class: 'bg-yellow-200 rounded px-0.5'}, node.text.val.slice(idx, idx + query.length)),
+          node.text.val.slice(idx + query.length),
+        )
+      } else {
+        displayContent = span({class: 'cursor-default'}, textContent)
+      }
+
+      return div(
+        {
+          class: `flex items-center py-0.5`,
+          style: `padding-left: ${depth * INDENT_PX}px`,
+          'data-id': String(node.id),
+        },
+        span({
+          class: `w-5 h-5 flex items-center justify-center cursor-pointer select-none text-xs ${hasKids ? 'text-gray-600' : 'text-gray-400'}`,
+          'data-bullet': String(node.id),
+        }, bullet),
+        div({class: `flex-1 px-1.5 py-0.5 border-l-2 ${border} ${node.done.val ? 'line-through text-gray-400' : ''}`},
+          displayContent,
+        ),
+      )
+    }
+
+    // App shell
+    const searchEl = div({class: 'mb-3 hidden'})
+    const bcEl = div({class: 'text-sm text-gray-400 mb-3'})
+    const rootEl = div()
+    const modeEl = div({
+      class: () => `fixed bottom-3 right-3 px-3 py-1 rounded text-xs text-white ${mode.val === 'edit' ? 'bg-amber-500' : 'bg-gray-500'}`,
+    }, () => mode.val === 'edit' ? 'EDIT' : 'NAV')
+
+    van.add(document.body,
+      div({class: 'font-sans text-gray-800 max-w-3xl mx-auto p-8'}, searchEl, bcEl, rootEl),
+      modeEl,
+    )
+
+    // Tree render
+    van.derive(() => {
+      const f = focusId.val, m = mode.val; ver.val
+      const q = searchQuery.val
+      const vis = filteredVisibleList()
+
+      rootEl.replaceChildren(...vis.map(v => renderItem(v.node, v.depth, f, m, q)))
+
+      const input = document.querySelector(`[data-input="${f}"]`)
+      if (input && document.activeElement !== input) input.focus()
+    })
+
+    // Breadcrumb
+    van.derive(() => {
+      ver.val
+      if (zoomStack.length) {
+        bcEl.replaceChildren(
+          span({class: 'cursor-pointer text-blue-500 hover:underline', 'data-zoom': '-1'}, 'Home'),
+          ...zoomStack.flatMap((id, i) => {
+            const n = findNode(items, id)
+            return [' / ', span({class: 'cursor-pointer text-blue-500 hover:underline', 'data-zoom': String(i)}, n?.text.val || '')]
+          }),
+        )
+      } else {
+        bcEl.replaceChildren()
+      }
+    })
+
+    // Search bar
+    van.derive(() => {
+      const active = searchActive.val
+      searchEl.className = active ? 'mb-3' : 'mb-3 hidden'
+      if (active) {
+        searchEl.replaceChildren(
+          div({class: 'flex items-center gap-2 border border-gray-300 rounded px-2 py-1'},
+            span({class: 'text-gray-400 text-sm'}, '/'),
+            inp({
+              class: 'flex-1 outline-none text-sm',
+              placeholder: 'Search...',
+              value: searchQuery.val,
+              id: 'search-input',
+              oninput: e => { searchQuery.val = e.target.value },
+              onkeydown: e => {
+                if (e.key === 'Escape') {
+                  searchQuery.val = ''
+                  searchActive.val = false
+                  bump()
+                }
+                if (e.key === 'Enter') {
+                  searchActive.val = false
+                  const vis = filteredVisibleList()
+                  if (vis.length) { focusId.val = vis[0].node.id; pushNav(vis[0].node.id) }
+                  bump()
+                }
+              },
+            }),
+            button({
+              class: 'text-gray-400 hover:text-gray-600 text-sm cursor-pointer',
+              onclick: () => { searchQuery.val = ''; searchActive.val = false; bump() },
+            }, '✕'),
+          ),
+        )
+        setTimeout(() => document.getElementById('search-input')?.focus(), 0)
+      }
+    })
+
+    // Auto-save
+    van.derive(() => {
+      focusId.val; mode.val; ver.val
+      localStorage.setItem('spike05b', JSON.stringify(serialize(items)))
+    })
+
+    // --- Keyboard ---
+
+    document.addEventListener('keydown', e => {
+      // Undo/redo — always active
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && e.shiftKey) { e.preventDefault(); redo(); return }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); return }
+
+      // Nav history
+      if (e.altKey && e.key === 'ArrowLeft' && mode.val === 'nav') { e.preventDefault(); navBack(); return }
+      if (e.altKey && e.key === 'ArrowRight' && mode.val === 'nav') { e.preventDefault(); navForward(); return }
+
+      // Search
+      if (e.key === '/' && mode.val === 'nav' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault()
+        searchActive.val = true
+        return
+      }
+
+      if (mode.val === 'edit') return handleEditKey(e)
+
+      if (e.key === 'ArrowUp' && !e.altKey) { e.preventDefault(); moveFocus(-1) }
+      if (e.key === 'ArrowDown' && !e.altKey) { e.preventDefault(); moveFocus(1) }
+      if (e.key === 'ArrowUp' && e.altKey) { e.preventDefault(); reorder(-1) }
+      if (e.key === 'ArrowDown' && e.altKey) { e.preventDefault(); reorder(1) }
+
+      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); indent() }
+      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); outdent() }
+
+      if (e.key === 'Enter') { e.preventDefault(); mode.val = 'edit'; bump() }
+      if (e.key === ' ') {
+        e.preventDefault()
+        const n = findNode(items, focusId.val)
+        if (n) { pushUndo(); n.done.val = !n.done.val; bump() }
+      }
+
+      if (e.key === 'ArrowLeft' && !e.altKey) {
+        e.preventDefault()
+        const n = findNode(items, focusId.val)
+        if (n?.children.val.length && !n.collapsed.val) { n.collapsed.val = true; bump() }
+        else {
+          const p = findParent(items, focusId.val)
+          const boundary = zoomStack.length ? zoomStack[zoomStack.length - 1] : null
+          if (p && p.id !== boundary) { focusId.val = p.id; pushNav(p.id) }
+        }
+      }
+
+      if (e.key === 'ArrowRight' && !e.altKey) {
+        e.preventDefault()
+        const n = findNode(items, focusId.val)
+        if (n?.collapsed.val) { n.collapsed.val = false; bump() }
+        else if (n?.children.val.length) { focusId.val = n.children.val[0].id; pushNav(n.children.val[0].id) }
+      }
+
+      if (e.key === 'z' && !e.ctrlKey && !e.metaKey && !searchActive.val) {
+        const n = findNode(items, focusId.val)
+        if (n?.children.val.length) {
+          zoomStack.push(n.id)
+          focusId.val = n.children.val[0].id
+          pushNav(n.children.val[0].id)
+          bump()
+        }
+      }
+
+      if (e.key === 'Escape') {
+        if (searchActive.val) {
+          searchQuery.val = ''
+          searchActive.val = false
+          bump()
+        } else if (zoomStack.length) {
+          const id = zoomStack.pop()
+          focusId.val = id
+          pushNav(id)
+          bump()
+        }
+      }
+
+      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteNode() }
+    })
+
+    const handleEditKey = e => {
+      if (e.key === 'Escape') { e.preventDefault(); exitEdit(); bump() }
+
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const text = exitEdit()
+        if (text.trim() === '') { deleteNode(); return }
+        pushUndo()
+        const arr = siblingsArr(focusId.val)
+        const idx = arr.findIndex(n => n.id === focusId.val)
+        const newNode = makeNode()
+        const p = findParent(items, focusId.val)
+        if (p) {
+          const copy = [...p.children.val]
+          copy.splice(idx + 1, 0, newNode)
+          p.children.val = copy
+        } else {
+          items.splice(idx + 1, 0, newNode)
+        }
+        focusId.val = newNode.id
+        pushNav(newNode.id)
+        mode.val = 'edit'
+        bump()
+      }
+
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        exitEdit()
+        if (e.shiftKey) outdent(); else indent()
+        mode.val = 'edit'
+        bump()
+      }
+    }
+
+    // --- Click ---
+
+    document.addEventListener('click', e => {
+      const bullet = e.target.closest('[data-bullet]')
+      if (bullet) {
+        const id = Number(bullet.dataset.bullet)
+        const n = findNode(items, id)
+        if (n?.children.val.length) { n.collapsed.val = !n.collapsed.val; focusId.val = id; pushNav(id); bump() }
+        return
+      }
+
+      const zoom = e.target.closest('[data-zoom]')
+      if (zoom) {
+        const idx = Number(zoom.dataset.zoom)
+        if (idx < 0) zoomStack.length = 0; else zoomStack.length = idx + 1
+        const vis = filteredVisibleList()
+        if (vis.length) { focusId.val = vis[0].node.id; pushNav(vis[0].node.id) }
+        bump()
+        return
+      }
+
+      const item = e.target.closest('[data-id]')
+      if (item) {
+        if (mode.val === 'edit') exitEdit()
+        focusId.val = Number(item.dataset.id)
+        pushNav(Number(item.dataset.id))
+        mode.val = 'nav'
+        bump()
+      }
+    })
+
+    document.addEventListener('dblclick', e => {
+      const item = e.target.closest('[data-id]')
+      if (item) {
+        focusId.val = Number(item.dataset.id)
+        pushNav(Number(item.dataset.id))
+        mode.val = 'edit'
+        bump()
+      }
+    })
+
+    // --- Default Data ---
+
+    const defaultData = () => [
+      mk('Welcome to Zen Outliner', [
+        'Navigate, edit, organize — all from the keyboard',
+        'This list IS the documentation',
+      ]),
+      mk('Navigation (NAV mode)', [
+        '↑ / ↓ — move focus',
+        '← — collapse or move to parent',
+        '→ — expand or move to first child',
+        'z — zoom into focused item',
+        'Escape — zoom out',
+        'Alt+← / Alt+→ — navigation history back/forward',
+      ]),
+      mk('Editing', [
+        'Enter — start editing',
+        'Enter (with text) — save and create new sibling',
+        'Enter (empty) — delete item',
+        'Escape — save and return to NAV',
+        'Double-click — edit any item',
+      ]),
+      mk('Organizing', [
+        'Tab — indent',
+        'Shift+Tab — outdent',
+        'Alt+↑ / Alt+↓ — reorder',
+      ]),
+      mk('Actions', [
+        'Space — toggle done',
+        'Backspace / Delete — remove item',
+        'Ctrl+Z — undo',
+        'Ctrl+Shift+Z — redo',
+        '/ — search',
+      ]),
+    ]
+
+    // --- Load ---
+
+    const d = localStorage.getItem('spike05b')
+    if (d) { try { items = deserialize(JSON.parse(d)) } catch { items = defaultData() } }
+    else items = defaultData()
+    focusId.val = items[0]?.id || 1
+    pushNav(focusId.val)
+    bump()
   </script>
 </body>
 </html>
