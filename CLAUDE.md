@@ -55,8 +55,18 @@ VanJS is the chosen rendering/reactivity layer. Key decisions:
 
 # Parallel Sessions
 
-Two sessions explore VanJS from different angles:
-- Session A (spike 04): core editing — reactive nodes, nav/edit, indent/outdent
-- Session B: infrastructure — undo/redo, zoom history, nav history
+Two sessions implement all must-haves independently with VanJS.
+Two full implementations, not a split. Merge point: compare
+both, learn from differences, decide what graduates to src/.
 
-Both build in spikes. Merge point: compare findings, decide what graduates to src/.
+- Session A: spike 05a-vanjs-outliner
+- Session B: spike 05b-vanjs-outliner
+
+Shared approach:
+- VanJS with reactive nodes (each property as van.state())
+- Flat list rendering with CSS indent
+- Snapshot-based undo/redo (Ctrl+Z / Ctrl+Shift+Z)
+- Zoom with breadcrumb trail
+- Navigation history — back/forward (Alt+Left / Alt+Right)
+- Search/filter with highlight
+- localStorage persistence
