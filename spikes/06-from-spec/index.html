@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spike 06 — From Spec</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body class="bg-white text-gray-800">
+  <div id="app"></div>
+  <script type="module">
+    import van from 'vanjs-core'
+    const { div, span, input: inp } = van.tags
+
+    // ── Node ──────────────────────────────────
+
+    let nextId = 1
+    const makeNode = (text = '', children = []) => ({
+      id: nextId++,
+      text: van.state(text),
+      collapsed: van.state(false),
+      done: van.state(false),
+      children: van.state(children),
+    })
+
+    // ── State ─────────────────────────────────
+
+    let items = []
+    const focusId = van.state(null)
+    const mode = van.state('nav')        // spec 1-4
+    const searchQuery = van.state('')
+    const searchActive = van.state(false)
+    const ver = van.state(0)
+
+    let zoomStack = []
+    let undoStack = []
+    let redoStack = []
+    let navHistory = []
+    let navIndex = -1
+    let editOrigText = ''
+
+    const bump = () => ver.val++
+
+    // ── Serialize ─────────────────────────────
+
+    const serialize = nodes => nodes.map(n => ({
+      t: n.text.val, c: n.collapsed.val, d: n.done.val,
+      ch: serialize(n.children.val),
+    }))
+
+    const deserialize = data => data.map(d => {
+      const n = makeNode(d.t)
+      n.collapsed.val = d.c || false
+      n.done.val = d.d || false
+      n.children.val = deserialize(d.ch || [])
+      return n
+    })
+
+    // ── Tree Helpers ──────────────────────────
+
+    const find = id => {
+      const walk = nodes => {
+        for (const n of nodes) {
+          if (n.id === id) return n
+          const f = walk(n.children.val)
+          if (f) return f
+        }
+        return null
+      }
+      return walk(items)
+    }
+
+    const parentOf = id => {
+      const walk = (nodes, par) => {
+        for (const n of nodes) {
+          if (n.id === id) return par
+          const f = walk(n.children.val, n)
+          if (f !== undefined) return f
+        }
+      }
+      return walk(items, null) ?? null
+    }
+
+    const siblingsOf = id => {
+      const p = parentOf(id)
+      return {
+        get: () => p ? p.children.val : items,
+        set: v => { if (p) p.children.val = v; else items = v },
+      }
+    }
+
+    const zoomBoundaryId = () =>
+      zoomStack.length ? zoomStack[zoomStack.length - 1] : null
+
+    const zoomRoot = () => {
+      if (!zoomStack.length) return items
+      const n = find(zoomStack[zoomStack.length - 1])
+      return n ? n.children.val : items
+    }
+
+    // spec 6-8: visible = not collapsed descendants, from zoom root
+    const flatVisible = () => {
+      const result = []
+      const walk = (nodes, depth) => {
+        for (const n of nodes) {
+          result.push({ node: n, depth })
+          if (!n.collapsed.val) walk(n.children.val, depth + 1)
+        }
+      }
+      walk(zoomRoot(), 0)
+      return result
+    }
+
+    // spec 62-64, 67: filter to matches + ancestors, entire document
+    const searchFiltered = () => {
+      const q = searchQuery.val.trim().toLowerCase()
+      if (!q) return flatVisible()
+
+      const matchIds = new Set()
+      const findAll = nodes => {
+        for (const n of nodes) {
+          if (n.text.val.toLowerCase().includes(q)) matchIds.add(n.id)
+          findAll(n.children.val)
+        }
+      }
+      findAll(items)
+
+      const keepIds = new Set(matchIds)
+      const markAncestors = (nodes, path) => {
+        for (const n of nodes) {
+          if (matchIds.has(n.id)) path.forEach(id => keepIds.add(id))
+          markAncestors(n.children.val, [...path, n.id])
+        }
+      }
+      markAncestors(items, [])
+
+      const result = []
+      const walk = (nodes, depth) => {
+        for (const n of nodes) {
+          if (!keepIds.has(n.id)) continue
+          result.push({ node: n, depth })
+          walk(n.children.val, depth + 1)
+        }
+      }
+      walk(zoomRoot(), 0)
+      return result
+    }
+
+    const getVisible = () =>
+      searchActive.val && searchQuery.val.trim() ? searchFiltered() : flatVisible()
+
+    // ── Undo / Redo (spec 57-60) ──────────────
+
+    const snapshot = () => JSON.stringify({
+      tree: serialize(items),
+      focus: focusId.val,
+      zoom: [...zoomStack],
+    })
+
+    const pushUndo = () => {
+      undoStack.push(snapshot())
+      if (undoStack.length > 200) undoStack.shift()
+      redoStack.length = 0  // spec 59
+    }
+
+    const restore = snap => {
+      const s = JSON.parse(snap)
+      items = deserialize(s.tree)
+      zoomStack = s.zoom
+      focusId.val = s.focus  // spec 57: restores focus position
+      bump()
+    }
+
+    const undo = () => {
+      if (!undoStack.length) return
+      redoStack.push(snapshot())
+      restore(undoStack.pop())
+    }
+
+    const redo = () => {
+      if (!redoStack.length) return
+      undoStack.push(snapshot())
+      restore(redoStack.pop())
+    }
+
+    // ── Nav History (spec 52-56) ──────────────
+
+    const pushNav = id => {
+      if (navHistory[navIndex] === id) return
+      navHistory = navHistory.slice(0, navIndex + 1)
+      navHistory.push(id)
+      navIndex = navHistory.length - 1
+    }
+
+    const navBack = () => {
+      if (navIndex <= 0) return  // spec 55
+      navIndex--
+      focusId.val = navHistory[navIndex]
+      bump()
+    }
+
+    const navForward = () => {
+      if (navIndex >= navHistory.length - 1) return  // spec 56
+      navIndex++
+      focusId.val = navHistory[navIndex]
+      bump()
+    }
+
+    // ── Actions ───────────────────────────────
+
+    // spec 6-8: cursor movement
+    const moveFocus = delta => {
+      const vis = getVisible()
+      const idx = vis.findIndex(v => v.node.id === focusId.val)
+      const next = vis[idx + delta]
+      if (next) { focusId.val = next.node.id; pushNav(next.node.id) }
+    }
+
+    // spec 18-21: indent
+    const indent = () => {
+      const sibs = siblingsOf(focusId.val)
+      const arr = sibs.get()
+      const idx = arr.findIndex(n => n.id === focusId.val)
+      if (idx <= 0) return  // spec 19
+      pushUndo()
+      const node = arr[idx]
+      const prev = arr[idx - 1]
+      prev.collapsed.val = false  // spec 20
+      prev.children.val = [...prev.children.val, node]  // spec 21
+      sibs.set(arr.filter((_, i) => i !== idx))
+      bump()
+    }
+
+    // spec 22-25, 51: outdent
+    const outdent = () => {
+      const parent = parentOf(focusId.val)
+      if (!parent) return  // spec 23
+      if (parent.id === zoomBoundaryId()) return  // spec 24, 51
+      pushUndo()
+      const node = find(focusId.val)
+      const grandSibs = siblingsOf(parent.id)
+      const gArr = grandSibs.get()
+      const pIdx = gArr.findIndex(n => n.id === parent.id)
+      parent.children.val = parent.children.val.filter(n => n.id !== focusId.val)
+      const copy = [...gArr]
+      copy.splice(pIdx + 1, 0, node)
+      grandSibs.set(copy)
+      bump()
+    }
+
+    // spec 27-31: reorder
+    const reorder = delta => {
+      const sibs = siblingsOf(focusId.val)
+      const arr = sibs.get()
+      const idx = arr.findIndex(n => n.id === focusId.val)
+      const newIdx = idx + delta
+      if (newIdx < 0 || newIdx >= arr.length) return  // spec 28, 30
+      pushUndo()
+      const copy = [...arr]
+      ;[copy[idx], copy[newIdx]] = [copy[newIdx], copy[idx]]
+      sibs.set(copy)
+      bump()
+    }
+
+    // spec 39-42: delete
+    const deleteNode = () => {
+      const vis = getVisible()
+      if (vis.length <= 1) return  // spec 42
+      pushUndo()
+      const idx = vis.findIndex(v => v.node.id === focusId.val)
+      const target = idx > 0 ? vis[idx - 1] : vis[idx + 1]  // spec 40-41
+      const sibs = siblingsOf(focusId.val)
+      sibs.set(sibs.get().filter(n => n.id !== focusId.val))
+      focusId.val = target.node.id
+      pushNav(target.node.id)
+      bump()
+    }
+
+    // spec 43-44: mark done
+    const toggleDone = () => {
+      const node = find(focusId.val)
+      if (!node) return
+      pushUndo()
+      node.done.val = !node.done.val
+      bump()
+    }
+
+    // spec 45-48: zoom
+    const zoomIn = () => {
+      const node = find(focusId.val)
+      if (!node || !node.children.val.length) return  // spec 46
+      zoomStack.push(node.id)
+      pushNav(focusId.val)
+      focusId.val = node.children.val[0].id
+      pushNav(node.children.val[0].id)
+      bump()
+    }
+
+    const zoomOut = () => {
+      if (!zoomStack.length) return  // spec 48
+      const id = zoomStack.pop()
+      focusId.val = id
+      pushNav(id)
+      bump()
+    }
+
+    // spec 50: breadcrumb click
+    const zoomTo = idx => {
+      if (idx < 0) { zoomStack.length = 0 }
+      else { zoomStack.length = idx + 1 }
+      const vis = flatVisible()
+      if (vis.length) { focusId.val = vis[0].node.id; pushNav(vis[0].node.id) }
+      bump()
+    }
+
+    // spec 32-38: editing
+    const enterEdit = () => {
+      const node = find(focusId.val)
+      if (!node) return
+      editOrigText = node.text.val
+      mode.val = 'edit'
+      bump()
+    }
+
+    const cancelEdit = () => {
+      mode.val = 'nav'  // spec 37: discard changes
+      bump()
+    }
+
+    const handleEditEnter = () => {
+      const el = document.querySelector(`[data-input="${focusId.val}"]`)
+      const node = find(focusId.val)
+      if (!el || !node) return
+      const text = el.value
+
+      // spec 36: empty text deletes
+      if (text.trim() === '') {
+        mode.val = 'nav'
+        deleteNode()
+        return
+      }
+
+      pushUndo()
+      if (text !== editOrigText) node.text.val = text  // spec 38
+
+      // spec 34-35: new sibling at same level, enter edit
+      const sibs = siblingsOf(focusId.val)
+      const arr = sibs.get()
+      const idx = arr.findIndex(n => n.id === focusId.val)
+      const newNode = makeNode()
+      const copy = [...arr]
+      copy.splice(idx + 1, 0, newNode)
+      sibs.set(copy)
+
+      focusId.val = newNode.id
+      pushNav(newNode.id)
+      editOrigText = ''
+      mode.val = 'edit'
+      bump()
+    }
+
+    // spec 26: tab/shift+tab in edit mode
+    const handleEditTab = shift => {
+      const el = document.querySelector(`[data-input="${focusId.val}"]`)
+      const node = find(focusId.val)
+      if (el && node) node.text.val = el.value
+      mode.val = 'nav'
+      if (shift) outdent(); else indent()
+      editOrigText = find(focusId.val)?.text.val || ''
+      mode.val = 'edit'
+      bump()
+    }
+
+    // spec 61-67: search
+    const openSearch = () => { searchActive.val = true; mode.val = 'nav'; bump() }
+    const closeSearch = () => { searchQuery.val = ''; searchActive.val = false; bump() }
+    const jumpToResult = () => {
+      const vis = getVisible()
+      if (vis.length) { focusId.val = vis[0].node.id; pushNav(vis[0].node.id) }
+      closeSearch()
+    }
+
+    // ── Render ────────────────────────────────
+
+    const renderRow = (node, depth, f, m, q) => {
+      const focused = node.id === f
+      const editing = focused && m === 'edit'
+      const hasKids = node.children.val.length > 0
+      const bullet = hasKids ? (node.collapsed.val ? '\u25B6' : '\u25BC') : '\u2022'
+
+      const border = editing ? 'border-amber-400 bg-amber-50'
+        : focused ? 'border-blue-500 bg-blue-50/50'
+        : 'border-transparent'
+
+      let content
+      if (editing) {
+        content = inp({
+          class: 'w-full outline-none bg-transparent',
+          value: node.text.val,
+          'data-input': String(node.id),
+        })
+      } else if (q && node.text.val.toLowerCase().includes(q.toLowerCase())) {
+        const i = node.text.val.toLowerCase().indexOf(q.toLowerCase())
+        content = span({},
+          node.text.val.slice(0, i),
+          span({ class: 'bg-yellow-200 rounded px-0.5' }, node.text.val.slice(i, i + q.length)),
+          node.text.val.slice(i + q.length),
+        )
+      } else {
+        content = span({}, node.text.val || '\u00A0')
+      }
+
+      return div(
+        {
+          class: 'flex items-center py-0.5 select-none',
+          style: `padding-left: ${depth * 24}px`,
+          'data-id': String(node.id),
+        },
+        span({
+          class: `w-5 h-5 flex items-center justify-center cursor-pointer text-xs
+            ${hasKids ? 'text-gray-600' : 'text-gray-400'}`,
+          'data-bullet': String(node.id),
+        }, bullet),
+        div({
+          class: `flex-1 px-1.5 py-0.5 border-l-2 ${border}
+            ${node.done.val ? 'line-through text-gray-400' : ''}`,
+        }, content),
+      )
+    }
+
+    // spec 49-50: breadcrumbs
+    const renderBreadcrumbs = () => {
+      if (!zoomStack.length) return null
+      const parts = [
+        span({ class: 'cursor-pointer text-blue-500 hover:underline', 'data-zoom': '-1' }, 'Home'),
+      ]
+      zoomStack.forEach((id, i) => {
+        const n = find(id)
+        parts.push(span({ class: 'mx-1 text-gray-300' }, '/'))
+        parts.push(span(
+          { class: `cursor-pointer hover:underline ${i === zoomStack.length - 1 ? 'text-gray-700' : 'text-blue-500'}`,
+            'data-zoom': String(i) },
+          n ? n.text.val : '?',
+        ))
+      })
+      return div({ class: 'text-sm mb-3' }, ...parts)
+    }
+
+    // ── Load (spec 69-70) ─────────────────────
+
+    const mk = (text, kids = []) => {
+      const n = makeNode(text)
+      n.children.val = kids.map(k => typeof k === 'string' ? makeNode(k) : k)
+      return n
+    }
+
+    const defaultItems = () => [
+      mk('Welcome to Zen Outliner', [
+        'Navigate with Up/Down, collapse with Left/Right',
+        'Press Enter to edit, Escape to cancel',
+        'Press / to search, z to zoom into a node',
+      ]),
+      mk('Quick Reference', [
+        'Tab / Shift+Tab — indent and outdent',
+        'Alt+Up / Alt+Down — reorder siblings',
+        'Space — mark done',
+        'Ctrl+Z / Ctrl+Shift+Z — undo and redo',
+        'Alt+Left / Alt+Right — navigate back and forward',
+      ]),
+    ]
+
+    const stored = localStorage.getItem('spike06')
+    if (stored) {
+      try { items = deserialize(JSON.parse(stored)) }
+      catch { items = defaultItems() }
+    } else {
+      items = defaultItems()
+    }
+    focusId.val = items[0]?.id || 1
+    pushNav(focusId.val)
+    bump()
+
+    // ── Mount ─────────────────────────────────
+
+    const bcEl = div()
+    const searchEl = div()
+    const treeEl = div({ class: 'outline-none', tabindex: '0' })
+    // spec 5: mode indicator
+    const modeEl = div({
+      class: () => `fixed bottom-3 right-3 px-3 py-1 rounded text-xs font-mono text-white ${
+        searchActive.val ? 'bg-green-600'
+        : mode.val === 'edit' ? 'bg-amber-500'
+        : 'bg-gray-500'
+      }`,
+    }, () => searchActive.val ? 'SEARCH' : mode.val === 'edit' ? 'EDIT' : 'NAV')
+
+    van.add(document.getElementById('app'),
+      div({ class: 'font-sans max-w-3xl mx-auto p-8' }, bcEl, searchEl, treeEl),
+      modeEl,
+    )
+
+    // Main render loop
+    van.derive(() => {
+      const f = focusId.val, m = mode.val; ver.val
+      const q = searchActive.val ? searchQuery.val.trim() : ''
+      const vis = getVisible()
+      treeEl.replaceChildren(...vis.map(v => renderRow(v.node, v.depth, f, m, q)))
+
+      // spec 33: cursor at end
+      const input = document.querySelector(`[data-input="${f}"]`)
+      if (input && document.activeElement !== input) {
+        input.focus()
+        input.setSelectionRange(input.value.length, input.value.length)
+      }
+      const row = document.querySelector(`[data-id="${f}"]`)
+      if (row) row.scrollIntoView({ block: 'nearest' })
+    })
+
+    // Breadcrumbs render
+    van.derive(() => {
+      ver.val
+      bcEl.replaceChildren()
+      const bc = renderBreadcrumbs()
+      if (bc) bcEl.appendChild(bc)
+    })
+
+    // Search bar render
+    van.derive(() => {
+      searchActive.val; searchQuery.val
+      searchEl.replaceChildren()
+      if (!searchActive.val) return
+      searchEl.appendChild(
+        div({ class: 'flex items-center gap-2 border border-gray-300 rounded px-2 py-1 mb-3' },
+          span({ class: 'text-gray-400 text-sm' }, '/'),
+          inp({
+            class: 'flex-1 outline-none text-sm',
+            placeholder: 'Search...',
+            value: searchQuery.val,
+            id: 'search-input',
+            oninput: e => { searchQuery.val = e.target.value; bump() },
+            onkeydown: e => {
+              if (e.key === 'Escape') { e.preventDefault(); closeSearch() }
+              if (e.key === 'Enter') { e.preventDefault(); jumpToResult() }
+            },
+          }),
+        )
+      )
+      setTimeout(() => document.getElementById('search-input')?.focus(), 0)
+    })
+
+    // spec 68: auto-save
+    van.derive(() => {
+      focusId.val; mode.val; ver.val
+      try { localStorage.setItem('spike06', JSON.stringify(serialize(items))) }
+      catch {}
+    })
+
+    // ── Keyboard ──────────────────────────────
+
+    document.addEventListener('keydown', e => {
+      // spec 60: undo/redo in all modes
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault(); undo(); return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault(); redo(); return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault(); redo(); return
+      }
+
+      if (searchActive.val) return
+
+      // spec 53-54: nav history
+      if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); navBack(); return }
+      if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); navForward(); return }
+
+      // Edit mode keys
+      if (mode.val === 'edit') {
+        if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); return }
+        if (e.key === 'Enter') { e.preventDefault(); handleEditEnter(); return }
+        if (e.key === 'Tab') { e.preventDefault(); handleEditTab(e.shiftKey); return }
+        return
+      }
+
+      // Nav mode keys
+      switch (e.key) {
+        case 'ArrowUp':
+          e.preventDefault()
+          if (e.altKey) reorder(-1); else moveFocus(-1)
+          break
+        case 'ArrowDown':
+          e.preventDefault()
+          if (e.altKey) reorder(1); else moveFocus(1)
+          break
+        case 'ArrowLeft': // spec 9-11
+          e.preventDefault()
+          {
+            const node = find(focusId.val)
+            if (node?.children.val.length && !node.collapsed.val) {
+              node.collapsed.val = true; bump()
+            } else {
+              const p = parentOf(focusId.val)
+              if (p && p.id !== zoomBoundaryId()) {
+                focusId.val = p.id; pushNav(p.id)
+              }
+            }
+          }
+          break
+        case 'ArrowRight': // spec 12-14
+          e.preventDefault()
+          {
+            const node = find(focusId.val)
+            if (node?.collapsed.val) { node.collapsed.val = false; bump() }
+            else if (node?.children.val.length) {
+              focusId.val = node.children.val[0].id
+              pushNav(node.children.val[0].id)
+            }
+          }
+          break
+        case 'Tab':
+          e.preventDefault()
+          if (e.shiftKey) outdent(); else indent()
+          break
+        case 'Enter':
+          e.preventDefault(); enterEdit()
+          break
+        case ' ':
+          e.preventDefault(); toggleDone()
+          break
+        case 'Backspace': case 'Delete':
+          e.preventDefault(); deleteNode()
+          break
+        case '/':
+          if (!e.ctrlKey && !e.metaKey) { e.preventDefault(); openSearch() }
+          break
+        case 'z':
+          if (!e.ctrlKey && !e.metaKey) zoomIn()
+          break
+        case 'Escape':
+          zoomOut()
+          break
+      }
+    })
+
+    // ── Click (spec 15-17, 50) ────────────────
+
+    document.addEventListener('click', e => {
+      const zoom = e.target.closest('[data-zoom]')
+      if (zoom) { zoomTo(Number(zoom.dataset.zoom)); return }
+
+      const bullet = e.target.closest('[data-bullet]')
+      if (bullet) {
+        const id = Number(bullet.dataset.bullet)
+        const n = find(id)
+        if (n?.children.val.length) {
+          n.collapsed.val = !n.collapsed.val
+          focusId.val = id; pushNav(id); bump()
+        }
+        return
+      }
+
+      const item = e.target.closest('[data-id]')
+      if (item) {
+        if (mode.val === 'edit') cancelEdit()
+        const id = Number(item.dataset.id)
+        focusId.val = id; pushNav(id)
+        mode.val = 'nav'; bump()
+      }
+    })
+
+    // spec 16: double-click enters edit
+    document.addEventListener('dblclick', e => {
+      const item = e.target.closest('[data-id]')
+      if (item) {
+        const id = Number(item.dataset.id)
+        focusId.val = id; pushNav(id)
+        editOrigText = find(id)?.text.val || ''
+        mode.val = 'edit'; bump()
+      }
+    })
+
+  </script>
+</body>
+</html>

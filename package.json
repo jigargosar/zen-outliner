@@ -10,7 +10,8 @@
         "typecheck": "tsc --noEmit",
         "typecheck:watch": "tsc --noEmit --watch",
         "spike:05a": "vite spikes/05a-vanjs-outliner --port 3000",
-        "spike:05b": "vite spikes/05b-vanjs-outliner --port 3001"
+        "spike:05b": "vite spikes/05b-vanjs-outliner --port 3001",
+        "spike:06": "vite spikes/06-from-spec --port 3002"
     },
     "devDependencies": {
         "@tailwindcss/vite": "4.2.2",
