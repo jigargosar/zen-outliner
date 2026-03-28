@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spike 04 — VanJS Outliner</title>
+  <script src="https://cdn.jsdelivr.net/npm/vanjs-core@1.5.5/dist/van-1.5.5.nomodule.min.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    .collapsed > ul { display: none; }
+  </style>
+</head>
+<body>
+  <script>
+    const {div, ul, li, span, input: inp} = van.tags
+
+    // --- State ---
+
+    let nextId = 1
+    const makeNode = (text = '', children = []) => ({ id: nextId++, text, children, collapsed: false, done: false })
+
+    const focusId = van.state(1)
+    const mode = van.state('nav')
+    const ver = van.state(0)
+
+    let items = [makeNode('Start here')]
+    let zoomStack = []
+
+    const bump = () => ver.val++
+
+    // --- Tree helpers ---
+
+    const findNode = (nodes, id) => {
+      for (const n of nodes) {
+        if (n.id === id) return n
+        const found = findNode(n.children, id)
+        if (found) return found
+      }
+      return null
+    }
+
+    const findParent = (nodes, id, parent = null) => {
+      for (const n of nodes) {
+        if (n.id === id) return parent
+        const found = findParent(n.children, id, n)
+        if (found) return found
+      }
+      return null
+    }
+
+    const siblings = id => {
+      const p = findParent(items, id)
+      return p ? p.children : items
+    }
+
+    const visibleList = () => {
+      const result = []
+      const zoomRoot = zoomStack.length
+        ? findNode(items, zoomStack[zoomStack.length - 1])?.children || []
+        : items
+      const walk = nodes => nodes.forEach(n => {
+        result.push(n)
+        if (!n.collapsed) walk(n.children)
+      })
+      walk(zoomRoot)
+      return result
+    }
+
+    // --- Render (reactive — no manual render() calls needed) ---
+
+    const renderItem = (n, f, m) => {
+      const focused = n.id === f
+      const editing = focused && m === 'edit'
+      const bullet = n.children.length ? (n.collapsed ? '▶' : '▼') : '•'
+      const border = editing ? 'border-amber-400 bg-amber-50' : focused ? 'border-blue-500 bg-blue-50/50' : 'border-transparent'
+
+      return li(
+        {id: `n${n.id}`, class: n.collapsed ? 'collapsed' : '', 'data-id': String(n.id)},
+        div({class: 'flex items-center'},
+          span({
+            class: `w-5 h-5 flex items-center justify-center cursor-pointer select-none text-xs ${n.children.length ? 'text-gray-600' : 'text-gray-400'}`,
+            'data-bullet': String(n.id)
+          }, bullet),
+          div({class: `flex-1 px-1.5 py-0.5 border-l-2 ${border} ${n.done ? 'line-through text-gray-400' : ''}`},
+            editing
+              ? inp({class: 'w-full outline-none bg-transparent font-[inherit] text-[inherit]', value: n.text, 'data-input': String(n.id)})
+              : span({class: 'cursor-default'}, n.text || '\u00A0')
+          )
+        ),
+        ...(n.children.length ? [ul({class: 'pl-6 space-y-px'}, ...n.children.map(c => renderItem(c, f, m)))] : [])
+      )
+    }
+
+    // App shell
+    const bcEl = div({class: 'text-sm text-gray-400 mb-3'})
+    const rootEl = ul({class: 'space-y-px'})
+    const modeEl = div({
+      class: () => `fixed bottom-3 right-3 px-3 py-1 rounded text-xs text-white ${mode.val === 'edit' ? 'bg-amber-500' : 'bg-gray-500'}`
+    }, () => mode.val === 'edit' ? 'EDIT' : 'NAV')
+
+    van.add(document.body,
+      div({class: 'font-sans text-gray-800 max-w-3xl mx-auto p-8'}, bcEl, rootEl),
+      modeEl
+    )
+
+    // Tree — rebuilds when focusId, mode, or tree structure changes
+    van.derive(() => {
+      const f = focusId.val, m = mode.val; ver.val
+
+      const zoomRoot = zoomStack.length
+        ? findNode(items, zoomStack[zoomStack.length - 1])?.children || []
+        : items
+
+      rootEl.replaceChildren(...zoomRoot.map(n => renderItem(n, f, m)))
+
+      const input = document.querySelector(`[data-input="${f}"]`)
+      if (input && document.activeElement !== input) input.focus()
+    })
+
+    // Breadcrumb — rebuilds on tree structure changes
+    van.derive(() => {
+      ver.val
+      if (zoomStack.length) {
+        bcEl.replaceChildren(
+          span({class: 'cursor-pointer text-blue-500 hover:underline', 'data-zoom': '-1'}, 'Home'),
+          ...zoomStack.flatMap((id, i) => {
+            const n = findNode(items, id)
+            return [' / ', span({class: 'cursor-pointer text-blue-500 hover:underline', 'data-zoom': String(i)}, n?.text || '')]
+          })
+        )
+      } else {
+        bcEl.replaceChildren()
+      }
+    })
+
+    // Auto-save
+    van.derive(() => {
+      focusId.val; mode.val; ver.val
+      localStorage.setItem('spike04', JSON.stringify(
+        (function ser(nodes) { return nodes.map(n => ({ t: n.text, c: n.collapsed, d: n.done, ch: ser(n.children) })) })(items)
+      ))
+    })
+
+    // --- Actions (pure state mutations — no render calls) ---
+
+    const moveFocus = delta => {
+      const vis = visibleList()
+      const idx = vis.findIndex(n => n.id === focusId.val)
+      const next = vis[idx + delta]
+      if (next) focusId.val = next.id
+    }
+
+    const indent = () => {
+      const sibs = siblings(focusId.val)
+      const idx = sibs.findIndex(n => n.id === focusId.val)
+      if (idx <= 0) return
+      const node = sibs.splice(idx, 1)[0]
+      sibs[idx - 1].collapsed = false
+      sibs[idx - 1].children.push(node)
+      bump()
+    }
+
+    const outdent = () => {
+      const parent = findParent(items, focusId.val)
+      if (!parent) return
+      if (zoomStack.length && parent.id === zoomStack[zoomStack.length - 1]) return
+      const grandSibs = siblings(parent.id)
+      const parentIdx = grandSibs.findIndex(n => n.id === parent.id)
+      const idx = parent.children.findIndex(n => n.id === focusId.val)
+      grandSibs.splice(parentIdx + 1, 0, parent.children.splice(idx, 1)[0])
+      bump()
+    }
+
+    const reorder = delta => {
+      const sibs = siblings(focusId.val)
+      const idx = sibs.findIndex(n => n.id === focusId.val)
+      const newIdx = idx + delta
+      if (newIdx < 0 || newIdx >= sibs.length) return
+      ;[sibs[idx], sibs[newIdx]] = [sibs[newIdx], sibs[idx]]
+      bump()
+    }
+
+    const deleteNode = () => {
+      const vis = visibleList()
+      if (vis.length <= 1) return
+      const idx = vis.findIndex(n => n.id === focusId.val)
+      const target = idx > 0 ? vis[idx - 1] : vis[idx + 1]
+      const sibs = siblings(focusId.val)
+      sibs.splice(sibs.findIndex(n => n.id === focusId.val), 1)
+      focusId.val = target.id
+    }
+
+    const exitEdit = () => {
+      const input = document.querySelector(`[data-input="${focusId.val}"]`)
+      const node = findNode(items, focusId.val)
+      if (node && input) node.text = input.value
+      mode.val = 'nav'
+      return node?.text || ''
+    }
+
+    // --- Keyboard (no render() calls — state changes trigger reactive updates) ---
+
+    document.addEventListener('keydown', e => {
+      if (mode.val === 'edit') return handleEditKey(e)
+
+      if (e.key === 'ArrowUp' && !e.altKey) { e.preventDefault(); moveFocus(-1) }
+      if (e.key === 'ArrowDown' && !e.altKey) { e.preventDefault(); moveFocus(1) }
+      if (e.key === 'ArrowUp' && e.altKey) { e.preventDefault(); reorder(-1) }
+      if (e.key === 'ArrowDown' && e.altKey) { e.preventDefault(); reorder(1) }
+
+      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); indent() }
+      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); outdent() }
+
+      if (e.key === 'Enter') { e.preventDefault(); mode.val = 'edit' }
+      if (e.key === ' ') {
+        e.preventDefault()
+        const n = findNode(items, focusId.val)
+        if (n) { n.done = !n.done; bump() }
+      }
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        const n = findNode(items, focusId.val)
+        if (n?.children.length && !n.collapsed) { n.collapsed = true; bump() }
+        else {
+          const p = findParent(items, focusId.val)
+          const boundary = zoomStack.length ? zoomStack[zoomStack.length - 1] : null
+          if (p && p.id !== boundary) focusId.val = p.id
+        }
+      }
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        const n = findNode(items, focusId.val)
+        if (n?.collapsed) { n.collapsed = false; bump() }
+        else if (n?.children.length) focusId.val = n.children[0].id
+      }
+
+      if (e.key === 'z' && !e.ctrlKey && !e.metaKey) {
+        const n = findNode(items, focusId.val)
+        if (n?.children.length) {
+          zoomStack.push(n.id)
+          focusId.val = n.children[0].id
+          bump()
+        }
+      }
+
+      if (e.key === 'Escape' && zoomStack.length) {
+        focusId.val = zoomStack.pop()
+        bump()
+      }
+
+      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteNode(); bump() }
+    })
+
+    const handleEditKey = e => {
+      if (e.key === 'Escape') { e.preventDefault(); exitEdit(); bump() }
+
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const text = exitEdit()
+        if (text.trim() === '') { deleteNode(); bump(); return }
+        const sibs = siblings(focusId.val)
+        const idx = sibs.findIndex(n => n.id === focusId.val)
+        const newNode = makeNode()
+        sibs.splice(idx + 1, 0, newNode)
+        focusId.val = newNode.id
+        mode.val = 'edit'
+        bump()
+      }
+
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        exitEdit()
+        if (e.shiftKey) outdent(); else indent()
+        mode.val = 'edit'
+      }
+    }
+
+    // --- Click ---
+
+    document.addEventListener('click', e => {
+      const bullet = e.target.closest('[data-bullet]')
+      if (bullet) {
+        const id = Number(bullet.dataset.bullet)
+        const n = findNode(items, id)
+        if (n?.children.length) { n.collapsed = !n.collapsed; focusId.val = id; bump() }
+        return
+      }
+
+      const zoom = e.target.closest('[data-zoom]')
+      if (zoom) {
+        const idx = Number(zoom.dataset.zoom)
+        if (idx < 0) zoomStack.length = 0; else zoomStack.length = idx + 1
+        const vis = visibleList()
+        if (vis.length) focusId.val = vis[0].id
+        bump()
+        return
+      }
+
+      const item = e.target.closest('[data-id]')
+      if (item) {
+        if (mode.val === 'edit') exitEdit()
+        focusId.val = Number(item.dataset.id)
+        mode.val = 'nav'
+        bump()
+      }
+    })
+
+    document.addEventListener('dblclick', e => {
+      const item = e.target.closest('[data-id]')
+      if (item) {
+        focusId.val = Number(item.dataset.id)
+        mode.val = 'edit'
+        bump()
+      }
+    })
+
+    // --- Load ---
+
+    const deserialize = nodes => nodes.map(item => {
+      const n = makeNode(item.t)
+      n.collapsed = item.c || false
+      n.done = item.d || false
+      n.children = item.ch ? deserialize(item.ch) : []
+      return n
+    })
+
+    const d = localStorage.getItem('spike04')
+    if (d) { try { items = deserialize(JSON.parse(d)) } catch {} }
+    focusId.val = items[0]?.id || 1
+    bump()
+  </script>
+</body>
+</html>
