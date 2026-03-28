@@ -44,12 +44,13 @@
     // ── Serialize ─────────────────────────────
 
     const serialize = nodes => nodes.map(n => ({
-      t: n.text.val, c: n.collapsed.val, d: n.done.val,
+      i: n.id, t: n.text.val, c: n.collapsed.val, d: n.done.val,
       ch: serialize(n.children.val),
     }))
 
     const deserialize = data => data.map(d => {
       const n = makeNode(d.t)
+      if (d.i != null) { n.id = d.i; if (d.i >= nextId) nextId = d.i + 1 }
       n.collapsed.val = d.c || false
       n.done.val = d.d || false
       n.children.val = deserialize(d.ch || [])
@@ -539,8 +540,8 @@
             id: 'search-input',
             oninput: e => { searchQuery.val = e.target.value; bump() },
             onkeydown: e => {
-              if (e.key === 'Escape') { e.preventDefault(); closeSearch() }
-              if (e.key === 'Enter') { e.preventDefault(); jumpToResult() }
+              if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSearch() }
+              if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); jumpToResult() }
             },
           }),
         )
