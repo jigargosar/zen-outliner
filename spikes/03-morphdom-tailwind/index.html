@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spike 03 — morphdom + Tailwind</title>
+  <script src="https://cdn.jsdelivr.net/npm/morphdom@2.7.4/dist/morphdom-umd.min.js"></script>
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    .collapsed > ul { display: none; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+
+    // --- State ---
+
+    let nextId = 1
+    const makeNode = (text = '', children = []) => ({ id: nextId++, text, children, collapsed: false, done: false })
+
+    const shortcuts = [
+      ['Navigation', [['↑ / ↓', 'Move focus'], ['← / →', 'Collapse/expand or parent/child'], ['z', 'Zoom in'], ['Esc', 'Zoom out']]],
+      ['Editing', [['Enter', 'Edit / save+new / delete if empty'], ['Esc', 'Stop editing'], ['Dbl-click', 'Edit any item']]],
+      ['Organizing', [['Tab', 'Indent'], ['Shift+Tab', 'Outdent'], ['Alt+↑/↓', 'Reorder']]],
+      ['Actions', [['Space', 'Toggle done'], ['Backspace', 'Delete item']]],
+    ]
+
+    let state = { items: [], focusId: null, mode: 'nav', zoomStack: [], showHelp: false }
+
+    // --- Tree helpers ---
+
+    const findNode = (items, id) => {
+      for (const node of items) {
+        if (node.id === id) return node
+        const found = findNode(node.children, id)
+        if (found) return found
+      }
+      return null
+    }
+
+    const findParent = (items, id, parent = null) => {
+      for (const node of items) {
+        if (node.id === id) return parent
+        const found = findParent(node.children, id, node)
+        if (found) return found
+      }
+      return null
+    }
+
+    const siblings = id => {
+      const p = findParent(state.items, id)
+      return p ? p.children : state.items
+    }
+
+    const visibleList = () => {
+      const result = []
+      const zoomRoot = state.zoomStack.length
+        ? findNode(state.items, state.zoomStack[state.zoomStack.length - 1])?.children || []
+        : state.items
+      const walk = items => items.forEach(node => {
+        result.push(node)
+        if (!node.collapsed) walk(node.children)
+      })
+      walk(zoomRoot)
+      return result
+    }
+
+    // --- Render ---
+
+    const renderItem = node => {
+      const focused = node.id === state.focusId
+      const editing = focused && state.mode === 'edit'
+      const bullet = node.children.length ? (node.collapsed ? '▶' : '▼') : '•'
+      const label = editing
+        ? `border-amber-400 bg-amber-50`
+        : focused ? `border-blue-500 bg-blue-50/50` : `border-transparent`
+
+      return `<li id="n${node.id}" class="${node.collapsed ? 'collapsed' : ''}" data-id="${node.id}">
+        <div class="flex items-center">
+          <span class="w-5 h-5 flex items-center justify-center cursor-pointer select-none text-xs ${node.children.length ? 'text-gray-600' : 'text-gray-400'}" data-bullet="${node.id}">${bullet}</span>
+          <div class="flex-1 px-1.5 py-0.5 border-l-2 ${label} ${node.done ? 'line-through text-gray-400' : ''}">
+            ${editing
+              ? `<input class="w-full outline-none bg-transparent font-[inherit] text-[inherit]" value="${node.text.replace(/"/g, '&quot;')}" data-input="${node.id}">`
+              : `<span class="cursor-default">${node.text || '&nbsp;'}</span>`}
+          </div>
+        </div>
+        ${node.children.length ? `<ul class="pl-6 space-y-px">${node.children.map(renderItem).join('')}</ul>` : ''}
+      </li>`
+    }
+
+    const renderBreadcrumb = () => {
+      if (!state.zoomStack.length) return ''
+      const crumbs = [`<span class="cursor-pointer text-blue-500 hover:underline" data-zoom="-1">Home</span>`]
+      state.zoomStack.forEach((id, i) => {
+        const node = findNode(state.items, id)
+        crumbs.push(`<span class="cursor-pointer text-blue-500 hover:underline" data-zoom="${i}">${node?.text || ''}</span>`)
+      })
+      return `<div class="text-sm text-gray-400 mb-3">${crumbs.join(' / ')}</div>`
+    }
+
+    const renderHelp = () => {
+      if (!state.showHelp) return ''
+      const rows = shortcuts.map(([section, keys]) =>
+        `<tr><td colspan="2" class="pt-3 pb-1 font-semibold text-gray-500 border-b border-gray-100">${section}</td></tr>` +
+        keys.map(([key, desc]) => `<tr><td class="py-1 pr-4 text-gray-400 whitespace-nowrap">${key}</td><td>${desc}</td></tr>`).join('')
+      ).join('')
+      return `<div class="fixed inset-0 bg-black/30 flex items-center justify-center" data-overlay>
+        <div class="bg-white rounded-lg p-6 max-w-md shadow-xl">
+          <h2 class="text-lg font-semibold mb-3">Keyboard Shortcuts</h2>
+          <table class="w-full text-sm"><tbody>${rows}</tbody></table>
+          <button class="mt-4 px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-sm cursor-pointer" data-close-help>Close</button>
+        </div>
+      </div>`
+    }
+
+    const renderApp = () => {
+      const zoomRoot = state.zoomStack.length
+        ? findNode(state.items, state.zoomStack[state.zoomStack.length - 1])?.children || []
+        : state.items
+      const modeColor = state.mode === 'edit' ? 'bg-amber-500' : 'bg-gray-500'
+
+      return `<div id="app" class="font-sans text-gray-800 max-w-3xl mx-auto p-8">
+        ${renderBreadcrumb()}
+        <ul class="space-y-px">${zoomRoot.map(renderItem).join('')}</ul>
+        <div class="fixed bottom-3 right-3 flex items-center gap-2">
+          <button class="px-2 py-1 rounded text-xs text-gray-400 hover:text-red-500 hover:bg-red-50 cursor-pointer" data-reset>Reset</button>
+          <button class="px-2 py-1 rounded text-xs text-gray-400 hover:text-blue-500 hover:bg-blue-50 cursor-pointer" data-help>?</button>
+          <div class="px-3 py-1 rounded text-xs text-white ${modeColor}">${state.mode === 'edit' ? 'EDIT' : 'NAV'}</div>
+        </div>
+        ${renderHelp()}
+      </div>`
+    }
+
+    const render = () => {
+      morphdom(document.getElementById('app'), renderApp(), {
+        onBeforeElUpdated: (from, to) => {
+          if (from.tagName === 'INPUT' && to.tagName === 'INPUT') to.value = from.value
+          return true
+        }
+      })
+      const input = document.querySelector(`[data-input="${state.focusId}"]`)
+      if (input && document.activeElement !== input) input.focus()
+      save()
+    }
+
+    // --- Actions ---
+
+    const moveFocus = delta => {
+      const vis = visibleList()
+      const idx = vis.findIndex(node => node.id === state.focusId)
+      const next = vis[idx + delta]
+      if (next) state.focusId = next.id
+    }
+
+    const indent = () => {
+      const sibs = siblings(state.focusId)
+      const idx = sibs.findIndex(node => node.id === state.focusId)
+      if (idx <= 0) return
+      const node = sibs.splice(idx, 1)[0]
+      sibs[idx - 1].collapsed = false
+      sibs[idx - 1].children.push(node)
+    }
+
+    const outdent = () => {
+      const parent = findParent(state.items, state.focusId)
+      if (!parent) return
+      if (state.zoomStack.length && parent.id === state.zoomStack[state.zoomStack.length - 1]) return
+      const grandSibs = siblings(parent.id)
+      const parentIdx = grandSibs.findIndex(node => node.id === parent.id)
+      const idx = parent.children.findIndex(node => node.id === state.focusId)
+      grandSibs.splice(parentIdx + 1, 0, parent.children.splice(idx, 1)[0])
+    }
+
+    const reorder = delta => {
+      const sibs = siblings(state.focusId)
+      const idx = sibs.findIndex(node => node.id === state.focusId)
+      const newIdx = idx + delta
+      if (newIdx < 0 || newIdx >= sibs.length) return
+      ;[sibs[idx], sibs[newIdx]] = [sibs[newIdx], sibs[idx]]
+    }
+
+    const deleteNode = () => {
+      const vis = visibleList()
+      if (vis.length <= 1) return
+      const idx = vis.findIndex(node => node.id === state.focusId)
+      state.focusId = (idx > 0 ? vis[idx - 1] : vis[idx + 1]).id
+      const sibs = siblings(vis[idx].id)
+      sibs.splice(sibs.findIndex(node => node.id === vis[idx].id), 1)
+    }
+
+    const enterEdit = () => { state.mode = 'edit'; render() }
+
+    const exitEdit = () => {
+      const input = document.querySelector(`[data-input="${state.focusId}"]`)
+      const node = findNode(state.items, state.focusId)
+      if (node && input) node.text = input.value
+      state.mode = 'nav'
+      return node?.text || ''
+    }
+
+    // --- Keyboard ---
+
+    document.addEventListener('keydown', e => {
+      if (state.showHelp) {
+        if (e.key === 'Escape') { state.showHelp = false; render() }
+        return
+      }
+      if (state.mode === 'edit') return handleEditKey(e)
+
+      if (e.key === 'ArrowUp' && !e.altKey) { e.preventDefault(); moveFocus(-1); render() }
+      if (e.key === 'ArrowDown' && !e.altKey) { e.preventDefault(); moveFocus(1); render() }
+      if (e.key === 'ArrowUp' && e.altKey) { e.preventDefault(); reorder(-1); render() }
+      if (e.key === 'ArrowDown' && e.altKey) { e.preventDefault(); reorder(1); render() }
+      if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); indent(); render() }
+      if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); outdent(); render() }
+      if (e.key === 'Enter') { e.preventDefault(); enterEdit() }
+
+      if (e.key === ' ') {
+        e.preventDefault()
+        const node = findNode(state.items, state.focusId)
+        if (node) { node.done = !node.done; render() }
+      }
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        const node = findNode(state.items, state.focusId)
+        if (node?.children.length && !node.collapsed) { node.collapsed = true }
+        else {
+          const p = findParent(state.items, state.focusId)
+          const boundary = state.zoomStack.length ? state.zoomStack[state.zoomStack.length - 1] : null
+          if (p && p.id !== boundary) state.focusId = p.id
+        }
+        render()
+      }
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        const node = findNode(state.items, state.focusId)
+        if (node?.collapsed) { node.collapsed = false }
+        else if (node?.children.length) { state.focusId = node.children[0].id }
+        render()
+      }
+
+      if (e.key === 'z' && !e.ctrlKey && !e.metaKey) {
+        const node = findNode(state.items, state.focusId)
+        if (node?.children.length) {
+          state.zoomStack.push(node.id); state.focusId = node.children[0].id; render()
+        }
+      }
+
+      if (e.key === 'Escape') {
+        if (state.zoomStack.length) { state.focusId = state.zoomStack.pop(); render() }
+      }
+
+      if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); deleteNode(); render() }
+    })
+
+    const handleEditKey = e => {
+      if (e.key === 'Escape') { e.preventDefault(); exitEdit(); render() }
+
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const text = exitEdit()
+        if (text.trim() === '') { deleteNode(); render(); return }
+        const sibs = siblings(state.focusId)
+        const idx = sibs.findIndex(node => node.id === state.focusId)
+        const newNode = makeNode()
+        sibs.splice(idx + 1, 0, newNode)
+        state.focusId = newNode.id; state.mode = 'edit'; render()
+      }
+
+      if (e.key === 'Tab') {
+        e.preventDefault(); exitEdit()
+        if (e.shiftKey) outdent(); else indent()
+        state.mode = 'edit'; render()
+      }
+    }
+
+    // --- Click (single delegation point) ---
+
+    document.addEventListener('click', e => {
+      if (e.target.closest('[data-reset]')) {
+        localStorage.removeItem('spike03'); state.items = defaultData()
+        state.focusId = state.items[0].id; state.mode = 'nav'; state.zoomStack = []; render(); return
+      }
+      if (e.target.closest('[data-help]')) { state.showHelp = true; render(); return }
+      if (e.target.closest('[data-close-help]') || e.target.matches('[data-overlay]')) { state.showHelp = false; render(); return }
+
+      const bullet = e.target.closest('[data-bullet]')
+      if (bullet) {
+        const id = Number(bullet.dataset.bullet)
+        const node = findNode(state.items, id)
+        if (node?.children.length) { node.collapsed = !node.collapsed; state.focusId = id; render() }
+        return
+      }
+
+      const zoom = e.target.closest('[data-zoom]')
+      if (zoom) {
+        const idx = Number(zoom.dataset.zoom)
+        state.zoomStack = idx < 0 ? [] : state.zoomStack.slice(0, idx + 1)
+        const vis = visibleList()
+        if (vis.length) state.focusId = vis[0].id
+        render(); return
+      }
+
+      const li = e.target.closest('[data-id]')
+      if (li) {
+        if (state.mode === 'edit') exitEdit()
+        state.focusId = Number(li.dataset.id); state.mode = 'nav'; render()
+      }
+    })
+
+    document.addEventListener('dblclick', e => {
+      const li = e.target.closest('[data-id]')
+      if (li) { state.focusId = Number(li.dataset.id); state.mode = 'edit'; render() }
+    })
+
+    // --- Persistence ---
+
+    const serializeItems = items => items.map(node => ({
+      t: node.text, c: node.collapsed, d: node.done, ch: serializeItems(node.children)
+    }))
+
+    const deserializeItems = items => items.map(item => {
+      const node = makeNode(item.t)
+      node.collapsed = item.c || false; node.done = item.d || false
+      node.children = item.ch ? deserializeItems(item.ch) : []
+      return node
+    })
+
+    const save = () => localStorage.setItem('spike03', JSON.stringify(serializeItems(state.items)))
+
+    const mk = (text, children = []) => { const node = makeNode(text); node.children = children; return node }
+
+    const defaultData = () => [
+      mk('Welcome to Zen Outliner', [
+        mk('This list IS the documentation — try the shortcuts below'),
+        mk('Navigate, edit, organize — all from the keyboard'),
+      ]),
+      mk('Navigation (NAV mode)', [
+        mk('↑ / ↓  — move focus up / down'),
+        mk('← — collapse children, or move to parent'),
+        mk('→ — expand children, or move to first child'),
+        mk('z — zoom into focused item (shows only its subtree)'),
+        mk('Escape — zoom out one level'),
+      ]),
+      mk('Editing', [
+        mk('Enter — start editing focused item'),
+        mk('Enter (while editing, with text) — save and create new sibling'),
+        mk('Enter (while editing, empty) — delete empty item, back to NAV'),
+        mk('Escape (while editing) — save and return to NAV'),
+        mk('Double-click — edit any item directly'),
+      ]),
+      mk('Organizing', [
+        mk('Tab — indent (nest under previous sibling)'),
+        mk('Shift+Tab — outdent (move up one level)'),
+        mk('Alt+↑ / Alt+↓ — reorder item among siblings'),
+        mk('Tab while editing — save, indent, keep editing'),
+      ]),
+      mk('Actions', [
+        mk('Space — toggle done (try it on this item!)'),
+        mk('Backspace / Delete — remove focused item'),
+      ]),
+      mk('Zoom', [
+        mk('z — zoom into any item with children to focus on a subtree'),
+        mk('Escape — zoom back out'),
+        mk('Breadcrumb trail — click to jump to any zoom level'),
+        mk('Try it: focus this item and press z'),
+      ]),
+    ]
+
+    const load = () => {
+      const d = localStorage.getItem('spike03')
+      if (d) {
+        try { state.items = deserializeItems(JSON.parse(d)) } catch { state.items = defaultData() }
+      } else {
+        state.items = defaultData()
+      }
+      state.focusId = state.items[0]?.id || 1
+    }
+
+    load()
+    render()
+  </script>
+</body>
+</html>

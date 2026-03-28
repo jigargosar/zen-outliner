@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spike 02 — Input + Nav/Edit modes</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; padding: 2rem; max-width: 800px; margin: 0 auto; color: #222; }
+    ul { list-style: none; padding-left: 1.5rem; }
+    #root { padding-left: 0; }
+    li { margin: 1px 0; display: flex; flex-wrap: wrap; align-items: center; }
+    li > ul { width: 100%; }
+
+    .bullet {
+      width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; user-select: none; color: #999; font-size: 10px; flex-shrink: 0;
+    }
+    .has-children > .bullet { color: #555; }
+    .collapsed > .bullet::after { content: '▶'; }
+    .has-children:not(.collapsed) > .bullet::after { content: '▼'; }
+    li:not(.has-children) > .bullet::after { content: '•'; font-size: 14px; }
+
+    .label {
+      padding: 3px 6px; border-left: 2px solid transparent; flex: 1; min-height: 24px;
+      line-height: 24px; cursor: default;
+    }
+    .focused > .label { background: #f0f4f8; border-left-color: #4285f4; }
+    .editing > .label { background: #fff8e1; border-left-color: #f59e0b; }
+    .done > .label { text-decoration: line-through; color: #999; }
+
+    .label input {
+      all: unset; width: 100%; font: inherit; color: inherit;
+    }
+
+    .collapsed > ul { display: none; }
+
+    .mode-indicator {
+      position: fixed; bottom: 12px; right: 12px; padding: 4px 10px;
+      border-radius: 4px; font-size: 12px; color: #fff; background: #555;
+    }
+    .mode-indicator.editing { background: #4285f4; }
+
+    .zoom-breadcrumb {
+      margin-bottom: 12px; font-size: 13px; color: #666;
+    }
+    .zoom-breadcrumb span { cursor: pointer; color: #4285f4; }
+    .zoom-breadcrumb span:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="zoom-breadcrumb" id="breadcrumb"></div>
+  <ul id="root"></ul>
+  <div class="mode-indicator" id="mode">NAV</div>
+  <script>
+    const root = document.getElementById('root')
+    const modeEl = document.getElementById('mode')
+    const breadcrumbEl = document.getElementById('breadcrumb')
+
+    let mode = 'nav' // 'nav' | 'edit'
+    let focusedLi = null
+    let zoomStack = [] // stack of li elements we've zoomed into
+
+    // --- DOM helpers ---
+
+    const createItem = (text = '') => {
+      const li = document.createElement('li')
+      const bullet = document.createElement('span')
+      bullet.className = 'bullet'
+      const label = document.createElement('div')
+      label.className = 'label'
+      label.textContent = text
+      li.append(bullet, label)
+      return li
+    }
+
+    const getLabel = li => li.querySelector(':scope > .label')
+    const getChildUl = li => li.querySelector(':scope > ul')
+    const getText = li => getLabel(li).textContent || (getLabel(li).querySelector('input')?.value ?? '')
+
+    const ensureChildUl = li => {
+      let ul = getChildUl(li)
+      if (!ul) { ul = document.createElement('ul'); li.appendChild(ul) }
+      return ul
+    }
+
+    const updateBullet = li => {
+      const ul = getChildUl(li)
+      if (ul && ul.children.length > 0) {
+        li.classList.add('has-children')
+      } else {
+        li.classList.remove('has-children', 'collapsed')
+        if (ul) ul.remove()
+      }
+    }
+
+    const visibleItems = () => {
+      const container = zoomStack.length ? getChildUl(zoomStack[zoomStack.length - 1]) : root
+      return [...container.querySelectorAll('li')].filter(li => {
+        let p = li.parentElement.closest('li')
+        while (p) {
+          if (p.classList.contains('collapsed')) return false
+          // stop at zoom boundary
+          if (zoomStack.length && p === zoomStack[zoomStack.length - 1]) break
+          p = p.parentElement.closest('li')
+        }
+        return true
+      })
+    }
+
+    // --- Focus ---
+
+    const setFocus = li => {
+      if (focusedLi) focusedLi.classList.remove('focused')
+      focusedLi = li
+      if (li) li.classList.add('focused')
+    }
+
+    // --- Edit mode ---
+
+    const enterEdit = li => {
+      if (!li) return
+      mode = 'edit'
+      modeEl.textContent = 'EDIT'
+      modeEl.classList.add('editing')
+      li.classList.add('editing')
+      const label = getLabel(li)
+      const text = label.textContent
+      label.textContent = ''
+      const input = document.createElement('input')
+      input.value = text
+      label.appendChild(input)
+      input.focus()
+    }
+
+    const exitEdit = () => {
+      if (mode !== 'edit' || !focusedLi) return
+      focusedLi.classList.remove('editing')
+      const label = getLabel(focusedLi)
+      const input = label.querySelector('input')
+      const text = input ? input.value : ''
+      label.textContent = text
+      mode = 'nav'
+      modeEl.textContent = 'NAV'
+      modeEl.classList.remove('editing')
+      save()
+      return text
+    }
+
+    // --- Zoom ---
+
+    const zoomIn = li => {
+      if (!li || !li.classList.contains('has-children')) return
+      zoomStack.push(li)
+      renderZoom()
+      const items = visibleItems()
+      if (items.length) setFocus(items[0])
+      save()
+    }
+
+    const zoomOut = () => {
+      if (!zoomStack.length) return
+      const li = zoomStack.pop()
+      renderZoom()
+      setFocus(li)
+      save()
+    }
+
+    const zoomTo = idx => {
+      zoomStack.length = idx
+      renderZoom()
+      const items = visibleItems()
+      if (items.length) setFocus(items[0])
+      save()
+    }
+
+    const renderZoom = () => {
+      // hide everything outside zoom, show everything inside
+      root.querySelectorAll('li').forEach(li => li.style.display = '')
+      root.style.display = ''
+
+      if (zoomStack.length) {
+        // hide root's direct children, show only zoomed subtree
+        ;[...root.children].forEach(li => li.style.display = 'none')
+        const target = zoomStack[zoomStack.length - 1]
+        // show path to target
+        let el = target
+        while (el && el !== root) { el.style.display = ''; el = el.parentElement }
+        // show zoomed item's children
+        const ul = getChildUl(target)
+        if (ul) [...ul.querySelectorAll('li')].forEach(li => li.style.display = '')
+        // hide the zoomed item's own label/bullet (we just want its children)
+        target.querySelector(':scope > .bullet').style.display = 'none'
+        target.querySelector(':scope > .label').style.display = 'none'
+      }
+
+      // breadcrumb
+      if (zoomStack.length) {
+        breadcrumbEl.innerHTML = '<span data-idx="0">Home</span>' +
+          zoomStack.map((li, i) => ` / <span data-idx="${i + 1}">${getText(li)}</span>`).join('')
+      } else {
+        breadcrumbEl.innerHTML = ''
+      }
+    }
+
+    breadcrumbEl.addEventListener('click', e => {
+      const span = e.target.closest('span[data-idx]')
+      if (span) zoomTo(Number(span.dataset.idx))
+    })
+
+    // --- Keyboard: Nav mode ---
+
+    document.addEventListener('keydown', e => {
+      if (mode === 'edit') return handleEditKey(e)
+
+      const items = visibleItems()
+      const idx = items.indexOf(focusedLi)
+
+      if (e.key === 'ArrowUp' && !e.altKey) {
+        e.preventDefault()
+        if (idx > 0) setFocus(items[idx - 1])
+      }
+
+      if (e.key === 'ArrowDown' && !e.altKey) {
+        e.preventDefault()
+        if (idx < items.length - 1) setFocus(items[idx + 1])
+      }
+
+      if (e.key === 'ArrowUp' && e.altKey) {
+        e.preventDefault()
+        if (!focusedLi) return
+        const prev = focusedLi.previousElementSibling
+        if (prev) { focusedLi.parentElement.insertBefore(focusedLi, prev); save() }
+      }
+
+      if (e.key === 'ArrowDown' && e.altKey) {
+        e.preventDefault()
+        if (!focusedLi) return
+        const next = focusedLi.nextElementSibling
+        if (next) { next.after(focusedLi); save() }
+      }
+
+      if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault()
+        if (!focusedLi) return
+        const prev = focusedLi.previousElementSibling; if (!prev) return
+        const parentUl = focusedLi.parentElement
+        prev.classList.remove('collapsed')
+        ensureChildUl(prev).appendChild(focusedLi)
+        updateBullet(prev)
+        if (parentUl !== root) updateBullet(parentUl.closest('li'))
+        save()
+      }
+
+      if (e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault()
+        if (!focusedLi) return
+        const parentUl = focusedLi.parentElement
+        if (parentUl === root || (zoomStack.length && parentUl === getChildUl(zoomStack[zoomStack.length - 1]))) return
+        const parentLi = parentUl.closest('li')
+        parentLi.after(focusedLi); updateBullet(parentLi); save()
+      }
+
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        enterEdit(focusedLi)
+      }
+
+      if (e.key === ' ') {
+        e.preventDefault()
+        if (focusedLi) { focusedLi.classList.toggle('done'); save() }
+      }
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        if (focusedLi?.classList.contains('has-children') && !focusedLi.classList.contains('collapsed')) {
+          focusedLi.classList.add('collapsed'); save()
+        } else {
+          // move to parent
+          const parentUl = focusedLi?.parentElement
+          if (parentUl && parentUl !== root && !(zoomStack.length && parentUl === getChildUl(zoomStack[zoomStack.length - 1]))) {
+            setFocus(parentUl.closest('li'))
+          }
+        }
+      }
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        if (focusedLi?.classList.contains('collapsed')) {
+          focusedLi.classList.remove('collapsed'); save()
+        } else if (focusedLi?.classList.contains('has-children')) {
+          setFocus(getChildUl(focusedLi).firstElementChild)
+        }
+      }
+
+      if (e.key === 'z' && !e.ctrlKey && !e.metaKey) {
+        zoomIn(focusedLi)
+      }
+
+      if (e.key === 'Escape') {
+        zoomOut()
+      }
+
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault()
+        if (!focusedLi) return
+        const items = visibleItems()
+        if (items.length <= 1) return
+        const i = items.indexOf(focusedLi)
+        const target = i > 0 ? items[i - 1] : items[i + 1]
+        const parentUl = focusedLi.parentElement
+        focusedLi.remove()
+        if (parentUl !== root) updateBullet(parentUl.closest('li'))
+        setFocus(target); save()
+      }
+    })
+
+    // --- Keyboard: Edit mode ---
+
+    const handleEditKey = e => {
+      const input = focusedLi?.querySelector('input')
+      if (!input) return
+
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        exitEdit()
+      }
+
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const text = exitEdit()
+        if (text.trim() === '') {
+          const items = visibleItems()
+          const i = items.indexOf(focusedLi)
+          const target = i > 0 ? items[i - 1] : items[i + 1]
+          if (target && items.length > 1) {
+            const parentUl = focusedLi.parentElement
+            focusedLi.remove()
+            if (parentUl !== root) updateBullet(parentUl.closest('li'))
+            setFocus(target)
+          }
+          save(); return
+        }
+        // create new sibling and edit it
+        const item = createItem()
+        focusedLi.after(item)
+        setFocus(item)
+        enterEdit(item)
+        save()
+      }
+
+      if (e.key === 'Tab') {
+        e.preventDefault()
+        exitEdit()
+        // re-dispatch as nav
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: e.shiftKey }))
+      }
+    }
+
+    // --- Click ---
+
+    root.addEventListener('click', e => {
+      if (e.target.classList.contains('bullet')) {
+        const li = e.target.closest('li')
+        if (li.classList.contains('has-children')) { li.classList.toggle('collapsed'); save() }
+        return
+      }
+      const li = e.target.closest('li')
+      if (!li) return
+      if (mode === 'edit') exitEdit()
+      setFocus(li)
+    })
+
+    root.addEventListener('dblclick', e => {
+      const li = e.target.closest('li')
+      if (!li) return
+      setFocus(li)
+      enterEdit(li)
+    })
+
+    // --- Persistence ---
+
+    const serialize = ul => [...ul.children].map(li => ({
+      t: getText(li),
+      c: li.classList.contains('collapsed'),
+      d: li.classList.contains('done'),
+      ch: getChildUl(li) ? serialize(getChildUl(li)) : []
+    }))
+
+    const deserialize = (items, ul) => items.forEach(item => {
+      const li = createItem(item.t)
+      if (item.c) li.classList.add('collapsed')
+      if (item.d) li.classList.add('done')
+      ul.appendChild(li)
+      if (item.ch.length) {
+        deserialize(item.ch, ensureChildUl(li))
+        updateBullet(li)
+      }
+    })
+
+    function save() { localStorage.setItem('spike02', JSON.stringify(serialize(root))) }
+
+    function load() {
+      const d = localStorage.getItem('spike02')
+      if (d) { try { deserialize(JSON.parse(d), root) } catch { root.appendChild(createItem('Start here')) } }
+      else root.appendChild(createItem('Start here'))
+    }
+
+    load()
+    const first = root.querySelector('li')
+    if (first) setFocus(first)
+  </script>
+</body>
+</html>

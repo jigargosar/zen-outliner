@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spike 01 — contentEditable Tree</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; padding: 2rem; max-width: 800px; margin: 0 auto; }
+    ul { list-style: none; padding-left: 1.5rem; }
+    #root { padding-left: 0; }
+    li { margin: 2px 0; }
+    .bullet {
+      display: inline-block; width: 16px; cursor: pointer;
+      user-select: none; text-align: center; color: #999; font-size: 12px;
+    }
+    .has-children > .bullet { color: #333; cursor: pointer; }
+    li > span[contenteditable] {
+      display: inline-block; padding: 2px 4px; border-radius: 3px;
+      min-width: 200px; outline: none; cursor: text;
+    }
+    li > span[contenteditable]:focus { background: #f0f4ff; }
+    .collapsed > ul { display: none; }
+    .collapsed > .bullet::after { content: '▶'; }
+    .has-children:not(.collapsed) > .bullet::after { content: '▼'; }
+    li:not(.has-children) > .bullet::after { content: '•'; }
+  </style>
+</head>
+<body>
+  <ul id="root"></ul>
+  <script>
+    const root = document.getElementById('root')
+
+    // --- DOM helpers ---
+
+    const createItem = (text = '') => {
+      const li = document.createElement('li')
+      const bullet = document.createElement('span')
+      bullet.className = 'bullet'
+      const span = document.createElement('span')
+      span.contentEditable = 'true'
+      span.textContent = text
+      li.append(bullet, span)
+      return li
+    }
+
+    const getSpan = li => li.querySelector(':scope > span[contenteditable]')
+    const getChildUl = li => li.querySelector(':scope > ul')
+
+    const ensureChildUl = li => {
+      let ul = getChildUl(li)
+      if (!ul) { ul = document.createElement('ul'); li.appendChild(ul) }
+      return ul
+    }
+
+    const updateBullet = li => {
+      const ul = getChildUl(li)
+      if (ul && ul.children.length > 0) {
+        li.classList.add('has-children')
+      } else {
+        li.classList.remove('has-children')
+        li.classList.remove('collapsed')
+        if (ul) ul.remove()
+      }
+    }
+
+    const visibleSpans = () =>
+      [...root.querySelectorAll('span[contenteditable]')].filter(s => {
+        let p = s.closest('li').parentElement.closest('li')
+        while (p) { if (p.classList.contains('collapsed')) return false; p = p.parentElement.closest('li') }
+        return true
+      })
+
+    const focusEnd = span => {
+      requestAnimationFrame(() => {
+        span.focus()
+        try {
+          const r = document.createRange(); r.selectNodeContents(span); r.collapse(false)
+          const s = window.getSelection(); s.removeAllRanges(); s.addRange(r)
+        } catch {}
+      })
+    }
+
+    const cursorAtStart = () => { const s = window.getSelection(); return s.isCollapsed && s.rangeCount && s.getRangeAt(0).startOffset === 0 }
+    const cursorAtEnd = span => { const s = window.getSelection(); return s.isCollapsed && s.rangeCount && s.getRangeAt(0).startOffset === span.textContent.length }
+
+    // --- Keyboard ---
+
+    root.addEventListener('keydown', e => {
+      const span = e.target; if (!span.hasAttribute('contenteditable')) return
+      const li = span.closest('li'), parentUl = li.parentElement
+
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const item = createItem(); li.after(item); focusEnd(getSpan(item)); save()
+      }
+
+      if (e.key === 'Tab' && !e.shiftKey) {
+        e.preventDefault()
+        const prev = li.previousElementSibling; if (!prev) return
+        prev.classList.remove('collapsed')
+        ensureChildUl(prev).appendChild(li)
+        updateBullet(prev)
+        if (parentUl.id !== 'root') updateBullet(parentUl.closest('li'))
+        focusEnd(span); save()
+      }
+
+      if (e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault()
+        if (parentUl.id === 'root') return
+        const parentLi = parentUl.closest('li')
+        parentLi.after(li); updateBullet(parentLi); focusEnd(span); save()
+      }
+
+      if (e.key === 'ArrowUp' && e.altKey) {
+        e.preventDefault()
+        const prev = li.previousElementSibling
+        if (prev) { parentUl.insertBefore(li, prev); focusEnd(span); save() }
+      }
+
+      if (e.key === 'ArrowDown' && e.altKey) {
+        e.preventDefault()
+        const next = li.nextElementSibling
+        if (next) { next.after(li); focusEnd(span); save() }
+      }
+
+      if (e.key === 'ArrowUp' && !e.altKey && cursorAtStart()) {
+        e.preventDefault()
+        const spans = visibleSpans(), i = spans.indexOf(span)
+        if (i > 0) focusEnd(spans[i - 1])
+      }
+
+      if (e.key === 'ArrowDown' && !e.altKey && cursorAtEnd(span)) {
+        e.preventDefault()
+        const spans = visibleSpans(), i = spans.indexOf(span)
+        if (i < spans.length - 1) focusEnd(spans[i + 1])
+      }
+
+      if (e.key === 'Backspace' && span.textContent === '') {
+        e.preventDefault()
+        const spans = visibleSpans(), i = spans.indexOf(span)
+        if (spans.length <= 1) return
+        const target = i > 0 ? spans[i - 1] : spans[i + 1]
+        li.remove(); if (parentUl.id !== 'root') updateBullet(parentUl.closest('li'))
+        focusEnd(target); save()
+      }
+    })
+
+    // Collapse/expand on bullet click
+    root.addEventListener('click', e => {
+      if (e.target.classList.contains('bullet')) {
+        const li = e.target.closest('li')
+        if (li.classList.contains('has-children')) { li.classList.toggle('collapsed'); save() }
+      }
+    })
+
+    // Save on text edits
+    root.addEventListener('input', save)
+
+    // --- Persistence ---
+
+    const serialize = ul => [...ul.children].map(li => ({
+      t: getSpan(li).textContent,
+      c: li.classList.contains('collapsed'),
+      ch: getChildUl(li) ? serialize(getChildUl(li)) : []
+    }))
+
+    const deserialize = (items, ul) => items.forEach(item => {
+      const li = createItem(item.t)
+      if (item.c) li.classList.add('collapsed')
+      ul.appendChild(li)
+      if (item.ch.length) deserialize(item.ch, ensureChildUl(li))
+    })
+
+    function save() { localStorage.setItem('spike01', JSON.stringify(serialize(root))) }
+
+    function load() {
+      const d = localStorage.getItem('spike01')
+      if (d) { try { deserialize(JSON.parse(d), root) } catch { root.appendChild(createItem('')) } }
+      else root.appendChild(createItem(''))
+    }
+
+    load()
+    requestAnimationFrame(() => focusEnd(root.querySelector('span[contenteditable]')))
+  </script>
+</body>
+</html>
