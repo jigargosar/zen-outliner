@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Spike 05b — VanJS Outliner</title>
-  <script src="https://cdn.jsdelivr.net/npm/vanjs-core@1.5.5/dist/van-1.5.5.nomodule.min.js"></script>
-  <script type="module" src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <script>
+  <script type="module">
+    import van from 'vanjs-core'
     const {div, span, input: inp, button} = van.tags
 
     // --- Data Model (reactive nodes) ---

@@ -4,12 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Spike 05a — VanJS Outliner</title>
-  <script src="https://cdn.jsdelivr.net/npm/vanjs-core@1.5.5/dist/van-1.5.5.nomodule.min.js"></script>
-  <script type="module" src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <div id="app"></div>
-  <script>
+  <script type="module">
+    import van from 'vanjs-core'
     const {div, ul, li, span, button, input: inp, h2, table, tbody, tr, td} = van.tags
 
     // --- Reactive Node ---
@@ -390,10 +390,14 @@
       ])
       return div(
         { class: 'fixed inset-0 bg-black/30 flex items-center justify-center', onclick: e => { if (e.target === e.currentTarget) showHelp.val = false } },
-        div({ class: 'bg-white rounded-lg p-6 max-w-md shadow-xl' },
-          h2({ class: 'text-lg font-semibold mb-3' }, 'Keyboard Shortcuts'),
-          table({ class: 'w-full text-sm' }, tbody(...rows)),
-          button({ class: 'mt-4 px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-sm cursor-pointer', onclick: () => { showHelp.val = false } }, 'Close')
+        div({ class: 'bg-white rounded-lg max-w-md shadow-xl max-h-[80vh] flex flex-col' },
+          h2({ class: 'text-lg font-semibold p-6 pb-3' }, 'Keyboard Shortcuts'),
+          div({ class: 'overflow-y-auto px-6' },
+            table({ class: 'w-full text-sm' }, tbody(...rows))
+          ),
+          div({ class: 'p-4 border-t border-gray-100' },
+            button({ class: 'px-3 py-1 rounded bg-gray-100 hover:bg-gray-200 text-sm cursor-pointer', onclick: () => { showHelp.val = false } }, 'Close')
+          )
         )
       )
     }
@@ -414,29 +418,110 @@
           () => mode.val === 'edit' ? 'EDIT' : 'NAV')
       )
 
+    // --- Default Data + Load ---
+
+    const mk = (text, children = []) => {
+      const n = makeNode(text)
+      n.children.val = children
+      return n
+    }
+
+    const defaultData = () => [
+      mk('Welcome to Zen Outliner', [
+        mk('This list IS the documentation — try the shortcuts below'),
+        mk('Press ? for the full keyboard shortcut reference'),
+      ]),
+      mk('Navigation', [
+        mk('↑ / ↓ — move focus'), mk('← — collapse or move to parent'),
+        mk('→ — expand or move to first child'), mk('z — zoom into subtree'),
+        mk('Escape — zoom out'), mk('Alt+← / Alt+→ — back/forward history'),
+      ]),
+      mk('Editing', [
+        mk('Enter — edit focused item'), mk('Enter (with text) — save + new sibling'),
+        mk('Enter (empty) — delete + back to nav'), mk('Escape — stop editing'),
+      ]),
+      mk('Organizing', [
+        mk('Tab — indent'), mk('Shift+Tab — outdent'),
+        mk('Alt+↑/↓ — reorder'), mk('Space — toggle done'),
+      ]),
+      mk('Undo & Search', [
+        mk('Ctrl+Z — undo'), mk('Ctrl+Shift+Z — redo'),
+        mk('Ctrl+F — search'), mk('Enter/Shift+Enter — next/prev match'),
+      ]),
+    ]
+
+    const loadData = () => {
+      const d = localStorage.getItem('spike05a')
+      if (d) {
+        try {
+          const parsed = JSON.parse(d)
+          items.val = deserialize(parsed.items)
+          focusId.val = parsed.focusId || items.val[0]?.id
+        } catch {
+          items.val = defaultData()
+          focusId.val = items.val[0].id
+        }
+      } else {
+        items.val = defaultData()
+        focusId.val = items.val[0].id
+      }
+    }
+
+    loadData()
+
     // --- Main Render ---
 
-    const appView = () =>
+    const treeContainer = div({ class: 'space-y-px' })
+    const bcContainer = div({ class: 'text-sm text-gray-400 mb-3' })
+    const searchContainer = div()
+    const helpContainer = div()
+
+    van.add(document.getElementById('app'),
       div({ class: 'font-sans text-gray-800 max-w-3xl mx-auto p-8' },
-        breadcrumbView,
-        searchBar,
-        () => {
-          const vis = flatVisible()
-          return div({ class: 'space-y-px' }, ...vis.map(v => renderRow(v.node, v.depth)))
-        },
-        toolbarView,
-        helpView,
+        bcContainer,
+        searchContainer,
+        treeContainer,
+        toolbarView(),
+        helpContainer,
       )
+    )
 
-    van.add(document.getElementById('app'), appView)
+    // Tree render — reactive
+    van.derive(() => {
+      const vis = flatVisible()
+      treeContainer.replaceChildren(...vis.map(v => renderRow(v.node, v.depth)))
+    })
 
-    // Focus management
+    // Breadcrumb — reactive
+    van.derive(() => {
+      const bc = breadcrumbView()
+      bcContainer.replaceChildren()
+      if (bc) bcContainer.appendChild(bc)
+    })
+
+    // Search bar — reactive
+    van.derive(() => {
+      const sb = searchBar()
+      searchContainer.replaceChildren()
+      if (sb) searchContainer.appendChild(sb)
+    })
+
+    // Help overlay — reactive
+    van.derive(() => {
+      const h = helpView()
+      helpContainer.replaceChildren()
+      if (h) helpContainer.appendChild(h)
+    })
+
+    // Focus + scroll management
     van.derive(() => {
       const id = focusId.val
       mode.val // also re-run on mode change
       requestAnimationFrame(() => {
-        const el = document.querySelector(`[data-input="${id}"]`)
-        if (el && document.activeElement !== el) el.focus()
+        const input = document.querySelector(`[data-input="${id}"]`)
+        if (input && document.activeElement !== input) input.focus()
+        const row = document.querySelector(`[data-id="${id}"]`)
+        if (row) row.scrollIntoView({ block: 'nearest' })
       })
     })
 
@@ -460,8 +545,9 @@
 
       if (searchActive.val) return // search bar handles its own keys
 
-      if (e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey) { e.preventDefault(); redo(); return }
+      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && e.shiftKey) { e.preventDefault(); redo(); return }
       if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undo(); return }
+      if (e.key === 'y' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); redo(); return }
       if (e.key === 'f' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); searchActive.val = true; return }
 
       if (e.key === 'ArrowLeft' && e.altKey) { e.preventDefault(); navBack(); return }
@@ -550,58 +636,6 @@
       }
     })
 
-    // --- Default Data ---
-
-    const mk = (text, children = []) => {
-      const n = makeNode(text)
-      n.children.val = children
-      return n
-    }
-
-    const defaultData = () => [
-      mk('Welcome to Zen Outliner', [
-        mk('This list IS the documentation — try the shortcuts below'),
-        mk('Press ? for the full keyboard shortcut reference'),
-      ]),
-      mk('Navigation', [
-        mk('↑ / ↓ — move focus'), mk('← — collapse or move to parent'),
-        mk('→ — expand or move to first child'), mk('z — zoom into subtree'),
-        mk('Escape — zoom out'), mk('Alt+← / Alt+→ — back/forward history'),
-      ]),
-      mk('Editing', [
-        mk('Enter — edit focused item'), mk('Enter (with text) — save + new sibling'),
-        mk('Enter (empty) — delete + back to nav'), mk('Escape — stop editing'),
-      ]),
-      mk('Organizing', [
-        mk('Tab — indent'), mk('Shift+Tab — outdent'),
-        mk('Alt+↑/↓ — reorder'), mk('Space — toggle done'),
-      ]),
-      mk('Undo & Search', [
-        mk('Ctrl+Z — undo'), mk('Ctrl+Shift+Z — redo'),
-        mk('Ctrl+F — search'), mk('Enter/Shift+Enter — next/prev match'),
-      ]),
-    ]
-
-    // --- Load ---
-
-    const loadData = () => {
-      const d = localStorage.getItem('spike05a')
-      if (d) {
-        try {
-          const parsed = JSON.parse(d)
-          items.val = deserialize(parsed.items)
-          focusId.val = parsed.focusId || items.val[0]?.id
-        } catch {
-          items.val = defaultData()
-          focusId.val = items.val[0].id
-        }
-      } else {
-        items.val = defaultData()
-        focusId.val = items.val[0].id
-      }
-    }
-
-    loadData()
   </script>
 </body>
 </html>
