@@ -1,4 +1,4 @@
-Spike 06 Issues
+Issues
 
 # State Issues
 
@@ -24,17 +24,6 @@ Spike 06 Issues
 
 1. Large list testing — scrolling, undo/redo with 5000+ nodes.
    Don't assume it works, verify.
-
-# Next Spike Setup
-
-1. Create a project-local agent for building spikes that:
-   a. Can read: docs/specs-v1.md (spec + gotchas + invariants)
-   b. Can read: docs/ux.md (UX principles + visual direction)
-   c. Cannot read: any spike code (spikes/*)
-   d. Cannot read: issues/bugs sections
-   e. Must read VanJS documentation (or relevant lib docs)
-   f. Ensures spike independence per CLAUDE.md rule
-   g. Build without search — search UX needs investigation first
 
 # Needs Investigation — Search UX
 
