@@ -60,54 +60,55 @@ as behaviors are discovered, decided, or clarified.
 
 # Delete
 
-40. Backspace or Delete removes the focused node and all its descendants
-41. Delete does nothing if it is the last remaining node
+40. The document must always contain at least one node
+41. Backspace or Delete removes the focused node and all its descendants
+42. Delete does nothing if it is the last remaining node
 
 # Mark Done
 
-42. Space toggles done on the focused node
-43. Done nodes show strikethrough and dimmed text
+43. Space toggles done on the focused node
+44. Done nodes show strikethrough and dimmed text
 
 # Zoom
 
-44. z zooms into the focused node, making it the view root
-45. z does nothing if the focused node has no children
-46. Escape zooms out to the parent of the current zoom root
-47. Escape does nothing if already at the document root
-48. A breadcrumb trail shows the path from Home to the current zoom root
-49. Clicking a breadcrumb zooms to that level
-50. Outdent cannot escape the zoom boundary
+45. z zooms into the focused node, making it the view root
+46. z does nothing if the focused node has no children
+47. Escape zooms out to the parent of the current zoom root
+48. Escape does nothing if already at the document root
+49. A breadcrumb trail shows the path from Home to the current zoom root
+50. Clicking a breadcrumb zooms to that level
+51. Outdent cannot escape the zoom boundary
 
 # Navigation History
 
-51. Navigation history tracks focus changes and other sensible events, and does not capture bursts
-52. Alt+Left goes back in history
-53. Alt+Right goes forward in history
+52. Navigation history tracks focus changes and other sensible events, and does not capture bursts
+53. Alt+Left goes back in history
+54. Alt+Right goes forward in history
 
 # Undo and Redo
 
-54. Ctrl+Z undoes the last mutation, restoring tree state and focus position
-55. Ctrl+Shift+Z redoes the last undone mutation
-56. Any new mutation after undo clears the redo stack
-57. Ctrl+Z and Ctrl+Shift+Z work in all modes
+55. Ctrl+Z undoes the last mutation, restoring tree state and focus position
+56. Ctrl+Shift+Z redoes the last undone mutation
+57. Any new mutation after undo clears the redo stack
+58. Ctrl+Z and Ctrl+Shift+Z work in all modes
 
 # Search
 
-58. / opens the search input
-59. Typing filters visible nodes to those matching the query
-60. Matching text is highlighted in the results
-61. Ancestors of matching nodes stay visible to preserve tree context
-62. Enter jumps to the first match and closes search
-63. Escape closes search, clears the filter, and restores the full view
-64. Search covers the entire document, not just the zoom scope
+59. / opens the search input
+60. Typing filters visible nodes to those matching the query
+61. Matching text is highlighted in the results
+62. Ancestors of matching nodes stay visible to preserve tree context
+63. Enter jumps to the first match and closes search
+64. Escape closes search, clears the filter, and restores the full view
+65. Search covers the entire document, not just the zoom scope
 
 # Persistence
 
-65. The tree auto-saves to localStorage on every state change
-66. The tree loads from localStorage on startup
-67. If storage is empty, corrupt, or contains no nodes, default data is loaded
-68. Loading errors are surfaced to the user
-69. First launch shows a welcome list that documents the keyboard shortcuts
+66. The tree auto-saves to localStorage on every state change
+67. The tree loads from localStorage on startup
+68. If storage is empty, corrupt, or contains no nodes, default data is loaded
+69. Loading errors are surfaced to the user
+70. First launch shows a welcome list that documents the keyboard shortcuts
 
 # Gotchas
 
