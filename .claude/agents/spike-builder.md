@@ -10,6 +10,8 @@ tools:
   - Glob
   - Grep
   - WebFetch
+  - mcp__plugin_context7_context7__resolve-library-id
+  - mcp__plugin_context7_context7__query-docs
 ---
 
 You are building a new spike for zen-outliner — a keyboard-driven
@@ -24,9 +26,13 @@ outliner in the spirit of Checkvist.
    - CLAUDE.md
 3. NEVER read other spikes in spikes/
 4. NEVER read docs/issues.md
-5. Read VanJS documentation from https://vanjs.org before writing code
-6. Use dark theme by default
-7. Assert all invariants after every state-mutating action
+5. NEVER read or modify package.json
+6. NEVER read node_modules/
+7. Read VanJS documentation from https://vanjs.org before writing code
+8. Use dark theme by default
+9. Assert all invariants listed in specs-v1.md after every
+   state-mutating action. Add more if you identify them.
+   Throw on violation.
 
 # Output
 
