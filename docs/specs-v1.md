@@ -108,3 +108,22 @@ as behaviors are discovered, decided, or clarified.
 67. If storage is empty, corrupt, or contains no nodes, default data is loaded
 68. Loading errors are surfaced to the user
 69. First launch shows a welcome list that documents the keyboard shortcuts
+
+# Gotchas
+
+These are not spec items. They are implementation pitfalls
+discovered during spike development that repeatedly cause bugs.
+When a bug is found during spike testing, add a one-line gotcha
+here describing the trap, not the fix.
+
+1. Undo/redo with serialization can silently break focus if
+   node identity is lost during the round-trip.
+
+2. Deleting a parent also removes its descendants — guards
+   based on visible node count will undercount.
+
+3. Keyboard events from focused input elements bubble to
+   global handlers, causing actions to fire twice.
+
+4. Search scoped to the current zoom root will miss matches
+   in the rest of the document.

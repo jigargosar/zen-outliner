@@ -21,3 +21,4 @@ The goal: a fast, focused tool for thinking in trees.
 Each spike must be completely independent. Do not read other spikes
 when building a new one — reading them contaminates the implementation
 with their patterns. Read only the spec and library documentation.
+When a bug is found during spike testing, add a one-line gotcha to docs/specs-v1.md describing the trap, not the fix.
