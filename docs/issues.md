@@ -33,6 +33,12 @@ Issues
    should it delete the empty node instead?
 3. Empty document state — Enter creates a node, but what
    should the UX feel like? Cursor placement, mode transitions?
+4. Tab works in edit mode (indent/outdent) but other nav keys
+   don't — should arrow keys, Space, Delete work during edit?
+   Decide which keys are editing keys vs action keys in edit mode.
+5. Remap primary controls to vim-like bindings (j/k/h/l)
+6. How is focus restored on reload? Should focusId be persisted
+   and restored from localStorage?
 
 # Needs Investigation — Search UX
 

@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zen Outliner</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body class="bg-zinc-900 text-zinc-200 h-screen flex flex-col overflow-hidden select-none">
+<script type="module">
+import van from "vanjs-core";
+
+const { div, span, input, button, ul, li } = van.tags;
+
+// ---------------------------------------------------------------------------
+// Data Model
+// ---------------------------------------------------------------------------
+
+let nextId = 1;
+
+function makeNode(text, children = [], done = false) {
+  return { id: nextId++, text, children, done };
+}
+
+function defaultData() {
+  return [
+    makeNode("Welcome to Zen Outliner", [
+      makeNode("Navigation", [
+        makeNode("Up / Down -- move focus"),
+        makeNode("Left -- collapse or go to parent"),
+        makeNode("Right -- expand or go to first child"),
+      ]),
+      makeNode("Editing", [
+        makeNode("Enter -- edit node / confirm and create sibling"),
+        makeNode("Escape -- discard and return to nav mode"),
+        makeNode("Backspace / Delete -- remove focused node"),
+        makeNode("Space -- toggle done"),
+      ]),
+      makeNode("Structure", [
+        makeNode("Tab -- indent under sibling above"),
+        makeNode("Shift+Tab -- outdent"),
+        makeNode("Alt+Up / Alt+Down -- reorder siblings"),
+      ]),
+      makeNode("Zoom", [
+        makeNode("z -- zoom into focused node"),
+        makeNode("Escape -- zoom out (when in nav mode)"),
+      ]),
+      makeNode("Other", [
+        makeNode("/ -- search"),
+        makeNode("Ctrl+Z -- undo"),
+        makeNode("Ctrl+Shift+Z -- redo"),
+        makeNode("Alt+Left / Alt+Right -- navigation history"),
+      ]),
+    ]),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// App State
+// ---------------------------------------------------------------------------
+
+const items = van.state(defaultData());
+const focusId = van.state(items.val[0].id);
+const mode = van.state("nav"); // "nav" | "edit" | "search"
+const collapsed = van.state(new Set()); // set of node IDs
+const zoomStack = van.state([]); // stack of node IDs (ancestors)
+const editText = van.state("");
+const searchQuery = van.state("");
+const searchOpen = van.state(false);
+
+// Undo/Redo
+const undoStack = van.state([]);
+const redoStack = van.state([]);
+
+// Navigation history
+const navHistory = van.state([]);
+const navHistoryIdx = van.state(-1);
+let navBurstTimer = null;
+
+// ---------------------------------------------------------------------------
+// Tree Utilities
+// ---------------------------------------------------------------------------
+
+function deepClone(nodes) {
+  return JSON.parse(JSON.stringify(nodes));
+}
+
+function find(id, nodes = items.val) {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const found = find(id, node.children);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findParent(id, nodes = items.val, parent = null) {
+  for (const node of nodes) {
+    if (node.id === id) return parent;
+    const found = findParent(id, node.children, node);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function findSiblings(id, nodes = items.val) {
+  for (const node of nodes) {
+    const idx = node.children.findIndex(c => c.id === id);
+    if (idx !== -1) return { siblings: node.children, index: idx };
+    const found = findSiblings(id, node.children);
+    if (found) return found;
+  }
+  // Check top level
+  const idx = nodes.findIndex(n => n.id === id);
+  if (idx !== -1) return { siblings: nodes, index: idx };
+  return null;
+}
+
+function getVisibleNodes(nodes = getViewRoot()) {
+  const result = [];
+  for (const node of nodes) {
+    result.push(node);
+    if (!collapsed.val.has(node.id) && node.children.length > 0) {
+      result.push(...getVisibleNodes(node.children));
+    }
+  }
+  return result;
+}
+
+function getViewRoot() {
+  if (zoomStack.val.length === 0) return items.val;
+  const zoomId = zoomStack.val[zoomStack.val.length - 1];
+  const node = find(zoomId);
+  return node ? node.children : items.val;
+}
+
+function getZoomRootNode() {
+  if (zoomStack.val.length === 0) return null;
+  const zoomId = zoomStack.val[zoomStack.val.length - 1];
+  return find(zoomId);
+}
+
+function countAllNodes(nodes) {
+  let count = 0;
+  for (const node of nodes) {
+    count += 1 + countAllNodes(node.children);
+  }
+  return count;
+}
+
+function collectAllIds(nodes, set = new Set()) {
+  for (const node of nodes) {
+    set.add(node.id);
+    collectAllIds(node.children, set);
+  }
+  return set;
+}
+
+function isDescendantOf(childId, ancestorId) {
+  const ancestor = find(ancestorId);
+  if (!ancestor) return false;
+  return collectAllIds(ancestor.children).has(childId);
+}
+
+function nodeDepth(id, nodes = getViewRoot(), depth = 0) {
+  for (const node of nodes) {
+    if (node.id === id) return depth;
+    const d = nodeDepth(id, node.children, depth + 1);
+    if (d !== -1) return d;
+  }
+  return -1;
+}
+
+// ---------------------------------------------------------------------------
+// Invariant Checking
+// ---------------------------------------------------------------------------
+
+function assertInvariants() {
+  if (items.val.length === 0) throw new Error("Invariant: document empty");
+  if (!find(focusId.val)) throw new Error("Invariant: focus points to missing node " + focusId.val);
+  for (const id of zoomStack.val) {
+    if (!find(id)) throw new Error("Invariant: stale zoom ref " + id);
+  }
+  if (!["nav", "edit", "search"].includes(mode.val)) throw new Error("Invariant: invalid mode " + mode.val);
+  // Check no duplicate IDs
+  const allIds = collectAllIds(items.val);
+  let count = 0;
+  const countIds = (nodes) => { for (const n of nodes) { count++; countIds(n.children); } };
+  countIds(items.val);
+  if (allIds.size !== count) throw new Error("Invariant: duplicate IDs in tree");
+}
+
+// ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
+
+const STORAGE_KEY = "zen-outliner-07";
+
+function saveToStorage() {
+  try {
+    const data = {
+      items: items.val,
+      focusId: focusId.val,
+      collapsed: [...collapsed.val],
+      zoomStack: zoomStack.val,
+      nextId,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error("Save failed:", e);
+  }
+}
+
+function loadFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.items) || data.items.length === 0) {
+      surfaceError("Stored data is empty or corrupt. Loading defaults.");
+      return false;
+    }
+    items.val = data.items;
+    focusId.val = data.focusId;
+    collapsed.val = new Set(data.collapsed || []);
+    zoomStack.val = data.zoomStack || [];
+    nextId = data.nextId || 1000;
+    // Verify focus is valid
+    if (!find(focusId.val)) {
+      focusId.val = items.val[0].id;
+    }
+    // Verify zoom stack
+    zoomStack.val = zoomStack.val.filter(id => find(id));
+    return true;
+  } catch (e) {
+    surfaceError("Failed to load saved data: " + e.message);
+    return false;
+  }
+}
+
+const loadError = van.state("");
+
+function surfaceError(msg) {
+  loadError.val = msg;
+  setTimeout(() => { loadError.val = ""; }, 5000);
+}
+
+// ---------------------------------------------------------------------------
+// Undo / Redo
+// ---------------------------------------------------------------------------
+
+function snapshot() {
+  return {
+    items: deepClone(items.val),
+    focusId: focusId.val,
+    collapsed: new Set(collapsed.val),
+    zoomStack: [...zoomStack.val],
+    nextId,
+  };
+}
+
+function restoreSnapshot(snap) {
+  items.val = snap.items;
+  focusId.val = snap.focusId;
+  collapsed.val = new Set(snap.collapsed);
+  zoomStack.val = [...snap.zoomStack];
+  nextId = snap.nextId;
+}
+
+let savedRedoStack = [];
+
+function pushUndo() {
+  savedRedoStack = [...redoStack.val];
+  const stack = [...undoStack.val, snapshot()];
+  undoStack.val = stack;
+  redoStack.val = [];
+}
+
+function undo() {
+  if (undoStack.val.length === 0) return;
+  const stack = [...undoStack.val];
+  const snap = stack.pop();
+  const redos = [...redoStack.val, snapshot()];
+  undoStack.val = stack;
+  redoStack.val = redos;
+  restoreSnapshot(snap);
+  if (mode.val === "edit") mode.val = "nav";
+  assertInvariants();
+  saveToStorage();
+}
+
+function redo() {
+  if (redoStack.val.length === 0) return;
+  const stack = [...redoStack.val];
+  const snap = stack.pop();
+  const undos = [...undoStack.val, snapshot()];
+  redoStack.val = stack;
+  undoStack.val = undos;
+  restoreSnapshot(snap);
+  if (mode.val === "edit") mode.val = "nav";
+  assertInvariants();
+  saveToStorage();
+}
+
+// ---------------------------------------------------------------------------
+// Navigation History
+// ---------------------------------------------------------------------------
+
+function pushNavHistory(id) {
+  if (navBurstTimer) clearTimeout(navBurstTimer);
+  navBurstTimer = setTimeout(() => {
+    const hist = navHistory.val.slice(0, navHistoryIdx.val + 1);
+    if (hist.length > 0 && hist[hist.length - 1] === id) return;
+    hist.push(id);
+    navHistory.val = hist;
+    navHistoryIdx.val = hist.length - 1;
+  }, 300);
+}
+
+function navBack() {
+  if (navHistoryIdx.val <= 0) return;
+  navHistoryIdx.val = navHistoryIdx.val - 1;
+  const id = navHistory.val[navHistoryIdx.val];
+  if (find(id)) {
+    focusId.val = id;
+    ensureFocusVisible();
+  }
+}
+
+function navForward() {
+  if (navHistoryIdx.val >= navHistory.val.length - 1) return;
+  navHistoryIdx.val = navHistoryIdx.val + 1;
+  const id = navHistory.val[navHistoryIdx.val];
+  if (find(id)) {
+    focusId.val = id;
+    ensureFocusVisible();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Focus Helpers
+// ---------------------------------------------------------------------------
+
+function setFocus(id) {
+  focusId.val = id;
+  pushNavHistory(id);
+  ensureFocusVisible();
+}
+
+function ensureFocusVisible() {
+  // Expand ancestors so focus is visible
+  const expandAncestors = (targetId, nodes = items.val, path = []) => {
+    for (const node of nodes) {
+      if (node.id === targetId) {
+        // Expand all ancestors in path
+        const newCollapsed = new Set(collapsed.val);
+        for (const p of path) newCollapsed.delete(p);
+        collapsed.val = newCollapsed;
+        return true;
+      }
+      if (expandAncestors(targetId, node.children, [...path, node.id])) return true;
+    }
+    return false;
+  };
+  expandAncestors(focusId.val);
+}
+
+// ---------------------------------------------------------------------------
+// Mutators
+// ---------------------------------------------------------------------------
+
+function mutate(fn) {
+  pushUndo();
+  fn();
+  assertInvariants();
+  saveToStorage();
+}
+
+function moveUp() {
+  const visible = getVisibleNodes();
+  const idx = visible.findIndex(n => n.id === focusId.val);
+  if (idx > 0) setFocus(visible[idx - 1].id);
+}
+
+function moveDown() {
+  const visible = getVisibleNodes();
+  const idx = visible.findIndex(n => n.id === focusId.val);
+  if (idx < visible.length - 1) setFocus(visible[idx + 1].id);
+}
+
+function collapseOrParent() {
+  const node = find(focusId.val);
+  if (!node) return;
+  // If node has children and is expanded, collapse it
+  if (node.children.length > 0 && !collapsed.val.has(node.id)) {
+    const newCollapsed = new Set(collapsed.val);
+    newCollapsed.add(node.id);
+    collapsed.val = newCollapsed;
+    return;
+  }
+  // Move to parent, but not beyond zoom boundary
+  const zoomRootId = zoomStack.val.length > 0 ? zoomStack.val[zoomStack.val.length - 1] : null;
+  if (zoomRootId && focusId.val === zoomRootId) return;
+  // Check if this node is a direct child of zoom root (at zoom boundary)
+  const viewRoot = getViewRoot();
+  if (viewRoot.some(n => n.id === focusId.val)) {
+    // At zoom boundary root level, do nothing
+    return;
+  }
+  const parent = findParent(focusId.val);
+  if (parent) {
+    setFocus(parent.id);
+  }
+}
+
+function expandOrChild() {
+  const node = find(focusId.val);
+  if (!node || node.children.length === 0) return;
+  if (collapsed.val.has(node.id)) {
+    const newCollapsed = new Set(collapsed.val);
+    newCollapsed.delete(node.id);
+    collapsed.val = newCollapsed;
+    return;
+  }
+  // Move to first child
+  setFocus(node.children[0].id);
+}
+
+function toggleCollapse(id) {
+  const node = find(id);
+  if (!node || node.children.length === 0) return;
+  const newCollapsed = new Set(collapsed.val);
+  if (newCollapsed.has(id)) {
+    newCollapsed.delete(id);
+  } else {
+    // If focused node is a descendant, move focus up
+    if (isDescendantOf(focusId.val, id)) {
+      setFocus(id);
+    }
+    newCollapsed.add(id);
+  }
+  collapsed.val = newCollapsed;
+}
+
+function indent() {
+  mutate(() => {
+    const info = findSiblings(focusId.val);
+    if (!info || info.index === 0) return restoreLastUndo();
+    const node = info.siblings.splice(info.index, 1)[0];
+    const newParent = info.siblings[info.index - 1];
+    newParent.children.push(node);
+    // Auto-expand target parent
+    const newCollapsed = new Set(collapsed.val);
+    newCollapsed.delete(newParent.id);
+    collapsed.val = newCollapsed;
+    items.val = [...items.val]; // trigger reactivity
+  });
+}
+
+function outdent() {
+  mutate(() => {
+    // Cannot outdent at view root level
+    const viewRoot = getViewRoot();
+    if (viewRoot.some(n => n.id === focusId.val)) return restoreLastUndo();
+    // Cannot outdent beyond zoom boundary
+    const zoomRootNode = getZoomRootNode();
+    if (zoomRootNode && zoomRootNode.children.some(n => n.id === focusId.val)) {
+      return restoreLastUndo();
+    }
+    const parent = findParent(focusId.val);
+    if (!parent) return restoreLastUndo();
+    const grandparentInfo = findSiblings(parent.id);
+    if (!grandparentInfo) return restoreLastUndo();
+    const childIdx = parent.children.findIndex(c => c.id === focusId.val);
+    const node = parent.children.splice(childIdx, 1)[0];
+    const parentIdx = grandparentInfo.index;
+    grandparentInfo.siblings.splice(parentIdx + 1, 0, node);
+    items.val = [...items.val];
+  });
+}
+
+function reorderUp() {
+  mutate(() => {
+    const info = findSiblings(focusId.val);
+    if (!info || info.index === 0) return restoreLastUndo();
+    const temp = info.siblings[info.index];
+    info.siblings[info.index] = info.siblings[info.index - 1];
+    info.siblings[info.index - 1] = temp;
+    items.val = [...items.val];
+  });
+}
+
+function reorderDown() {
+  mutate(() => {
+    const info = findSiblings(focusId.val);
+    if (!info || info.index >= info.siblings.length - 1) return restoreLastUndo();
+    const temp = info.siblings[info.index];
+    info.siblings[info.index] = info.siblings[info.index + 1];
+    info.siblings[info.index + 1] = temp;
+    items.val = [...items.val];
+  });
+}
+
+function restoreLastUndo() {
+  // Pop the undo we just pushed since the operation was a no-op
+  const stack = [...undoStack.val];
+  stack.pop();
+  undoStack.val = stack;
+  // Restore redo stack since this was a no-op
+  redoStack.val = savedRedoStack;
+}
+
+function deleteNode() {
+  const totalNodes = countAllNodes(items.val);
+  if (totalNodes <= 1) return; // Must keep at least one node
+  mutate(() => {
+    const visible = getVisibleNodes();
+    const idx = visible.findIndex(n => n.id === focusId.val);
+    const nodeToDelete = find(focusId.val);
+    const info = findSiblings(focusId.val);
+    if (!info || !nodeToDelete) return restoreLastUndo();
+
+    // Collect all IDs being deleted (node + descendants)
+    const deletedIds = collectAllIds([nodeToDelete]);
+
+    // Clean up zoom stack if deleting a zoomed-into node
+    zoomStack.val = zoomStack.val.filter(id => !deletedIds.has(id));
+
+    // Remove the node from its siblings array
+    info.siblings.splice(info.index, 1);
+
+    // Pick next focus: next visible node that was not deleted, or previous
+    const remaining = visible.filter(n => !deletedIds.has(n.id));
+    if (remaining.length > 0) {
+      const newIdx = Math.min(idx, remaining.length - 1);
+      focusId.val = remaining[newIdx].id;
+    } else {
+      focusId.val = items.val[0].id;
+    }
+    items.val = [...items.val];
+  });
+}
+
+function toggleDone() {
+  mutate(() => {
+    const node = find(focusId.val);
+    if (node) node.done = !node.done;
+    items.val = [...items.val];
+  });
+}
+
+function enterEditMode() {
+  const node = find(focusId.val);
+  if (!node) return;
+  editText.val = node.text;
+  mode.val = "edit";
+}
+
+function saveEdit() {
+  const node = find(focusId.val);
+  if (!node) return;
+  const newText = editText.val.trim();
+
+  if (newText === "") {
+    // Empty text: delete node and return to nav
+    mode.val = "nav";
+    deleteNode();
+    return;
+  }
+
+  if (newText !== node.text) {
+    mutate(() => {
+      node.text = newText;
+      items.val = [...items.val];
+    });
+  }
+
+  // Create new sibling below
+  mode.val = "nav";
+  mutate(() => {
+    const newNode = makeNode("");
+    const info = findSiblings(focusId.val);
+    if (info) {
+      info.siblings.splice(info.index + 1, 0, newNode);
+    }
+    focusId.val = newNode.id;
+    items.val = [...items.val];
+  });
+  editText.val = "";
+  mode.val = "edit";
+}
+
+function cancelEdit() {
+  mode.val = "nav";
+}
+
+function enterOnEmptyList() {
+  // Spec #38: Enter on empty list creates node and enters edit mode
+  const viewRoot = getViewRoot();
+  if (viewRoot.length === 0) {
+    mutate(() => {
+      const newNode = makeNode("");
+      viewRoot.push(newNode);
+      focusId.val = newNode.id;
+      items.val = [...items.val];
+    });
+    editText.val = "";
+    mode.val = "edit";
+    return true;
+  }
+  return false;
+}
+
+function zoomIn() {
+  const node = find(focusId.val);
+  if (!node || node.children.length === 0) return;
+  zoomStack.val = [...zoomStack.val, focusId.val];
+  setFocus(node.children[0].id);
+  saveToStorage();
+}
+
+function zoomOut() {
+  if (zoomStack.val.length === 0) return;
+  const stack = [...zoomStack.val];
+  const poppedId = stack.pop();
+  zoomStack.val = stack;
+  setFocus(poppedId);
+  saveToStorage();
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+function matchesSearch(node, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  if (node.text.toLowerCase().includes(q)) return true;
+  return node.children.some(c => matchesSearch(c, q));
+}
+
+function nodeMatchesDirectly(node, query) {
+  if (!query) return false;
+  return node.text.toLowerCase().includes(query.toLowerCase());
+}
+
+function getFirstMatch(nodes, query) {
+  for (const node of nodes) {
+    if (nodeMatchesDirectly(node, query)) return node;
+    const childMatch = getFirstMatch(node.children, query);
+    if (childMatch) return childMatch;
+  }
+  return null;
+}
+
+function openSearch() {
+  searchQuery.val = "";
+  searchOpen.val = true;
+  mode.val = "search";
+}
+
+function closeSearch() {
+  searchQuery.val = "";
+  searchOpen.val = false;
+  if (mode.val === "search") mode.val = "nav";
+}
+
+function jumpToFirstMatch() {
+  if (!searchQuery.val) {
+    closeSearch();
+    return;
+  }
+  // Search entire document, not just zoom scope (spec #66)
+  const match = getFirstMatch(items.val, searchQuery.val);
+  if (match) {
+    // Clear zoom to show the match
+    zoomStack.val = [];
+    setFocus(match.id);
+    ensureFocusVisible();
+  }
+  closeSearch();
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard Handler
+// ---------------------------------------------------------------------------
+
+function handleKeyDown(e) {
+  // Ctrl+Z / Ctrl+Shift+Z work in all modes (spec #59)
+  if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
+    e.preventDefault();
+    undo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === "Z") {
+    e.preventDefault();
+    redo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "z") {
+    e.preventDefault();
+    redo();
+    return;
+  }
+
+  // Tab/Shift+Tab work in both nav and edit modes (spec #29)
+  if (e.key === "Tab" && (mode.val === "nav" || mode.val === "edit")) {
+    e.preventDefault();
+    if (e.shiftKey) {
+      outdent();
+    } else {
+      indent();
+    }
+    return;
+  }
+
+  if (mode.val === "search") {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      jumpToFirstMatch();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      closeSearch();
+    }
+    return;
+  }
+
+  if (mode.val === "edit") {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveEdit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelEdit();
+    }
+    return;
+  }
+
+  // Nav mode
+  if (e.key === "ArrowUp" && e.altKey) {
+    e.preventDefault();
+    reorderUp();
+    return;
+  }
+  if (e.key === "ArrowDown" && e.altKey) {
+    e.preventDefault();
+    reorderDown();
+    return;
+  }
+  if (e.key === "ArrowLeft" && e.altKey) {
+    e.preventDefault();
+    navBack();
+    return;
+  }
+  if (e.key === "ArrowRight" && e.altKey) {
+    e.preventDefault();
+    navForward();
+    return;
+  }
+
+  switch (e.key) {
+    case "ArrowUp":
+      e.preventDefault();
+      moveUp();
+      break;
+    case "ArrowDown":
+      e.preventDefault();
+      moveDown();
+      break;
+    case "ArrowLeft":
+      e.preventDefault();
+      collapseOrParent();
+      break;
+    case "ArrowRight":
+      e.preventDefault();
+      expandOrChild();
+      break;
+    case "Enter":
+      e.preventDefault();
+      if (!enterOnEmptyList()) {
+        enterEditMode();
+      }
+      break;
+    case " ":
+      e.preventDefault();
+      toggleDone();
+      break;
+    case "Backspace":
+    case "Delete":
+      e.preventDefault();
+      deleteNode();
+      break;
+    case "z":
+      e.preventDefault();
+      zoomIn();
+      break;
+    case "Escape":
+      e.preventDefault();
+      zoomOut();
+      break;
+    case "/":
+      e.preventDefault();
+      openSearch();
+      break;
+  }
+}
+
+document.addEventListener("keydown", handleKeyDown);
+
+// ---------------------------------------------------------------------------
+// Components
+// ---------------------------------------------------------------------------
+
+function highlightMatch(text, query) {
+  if (!query) return text;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text;
+  return span(
+    text.slice(0, idx),
+    span({ class: "bg-yellow-500/40 text-yellow-200 rounded px-0.5" }, text.slice(idx, idx + query.length)),
+    text.slice(idx + query.length),
+  );
+}
+
+function Bullet({ node, onclick }) {
+  const hasChildren = node.children.length > 0;
+  const isCollapsed = collapsed.val.has(node.id);
+  return span(
+    {
+      class: "inline-flex items-center justify-center w-5 h-5 cursor-pointer shrink-0 " +
+        (hasChildren ? "text-zinc-400" : "text-zinc-600"),
+      onclick: (e) => {
+        e.stopPropagation();
+        if (hasChildren) toggleCollapse(node.id);
+      },
+    },
+    hasChildren
+      ? (isCollapsed ? "\u25B6" : "\u25BC") // right triangle / down triangle
+      : "\u2022", // bullet
+  );
+}
+
+function NodeRow({ node, depth, query }) {
+  const isFocused = focusId.val === node.id;
+  const isEditing = isFocused && mode.val === "edit";
+  const isDone = node.done;
+
+  return div(
+    {
+      class: "flex items-start py-0.5 pr-2 border-l-2 " +
+        (isFocused ? "border-blue-500 bg-zinc-800" : "border-transparent") +
+        (isDone ? " opacity-50" : ""),
+      style: `padding-left: ${depth * 20 + 4}px`,
+      onclick: () => {
+        setFocus(node.id);
+        if (mode.val !== "nav") mode.val = "nav";
+      },
+      ondblclick: () => {
+        setFocus(node.id);
+        enterEditMode();
+      },
+      "data-node-id": node.id,
+    },
+    Bullet({ node }),
+    isEditing
+      ? input({
+          type: "text",
+          class: "flex-1 bg-zinc-700 text-zinc-100 px-2 py-0.5 rounded outline-none border border-zinc-500 focus:border-blue-500 text-sm ml-1",
+          value: editText.val,
+          oninput: (e) => { editText.val = e.target.value; },
+          // Prevent keydown from bubbling to global handler for text input keys
+          // but allow Enter, Escape, Tab, Ctrl+Z to bubble
+          onkeydown: (e) => {
+            if (e.key === "Enter" || e.key === "Escape" || e.key === "Tab" ||
+                ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z"))) {
+              // Let these bubble to global handler
+              return;
+            }
+            e.stopPropagation();
+          },
+        })
+      : span(
+          {
+            class: "flex-1 text-sm ml-1 py-0.5 " +
+              (isDone ? "line-through text-zinc-500" : "text-zinc-200"),
+          },
+          (searchOpen.val && query)
+            ? highlightMatch(node.text, query)
+            : node.text || span({ class: "text-zinc-600 italic" }, "(empty)"),
+        ),
+  );
+}
+
+function TreeView({ nodes, depth = 0, query = "" }) {
+  const elements = [];
+  for (const node of nodes) {
+    // In search mode, filter to matches and their ancestors
+    if (searchOpen.val && query && !matchesSearch(node, query)) continue;
+    elements.push(NodeRow({ node, depth, query }));
+    if (node.children.length > 0 && !collapsed.val.has(node.id)) {
+      elements.push(TreeView({ nodes: node.children, depth: depth + 1, query }));
+    }
+  }
+  return div(elements);
+}
+
+function Breadcrumbs() {
+  if (zoomStack.val.length === 0) {
+    return div(
+      { class: "h-8 flex items-center px-3 text-sm text-zinc-500 border-b border-zinc-800" },
+      span({ class: "text-zinc-400" }, "Home"),
+    );
+  }
+  const crumbs = [];
+  crumbs.push(
+    span(
+      {
+        class: "text-zinc-400 hover:text-zinc-200 cursor-pointer",
+        onclick: () => {
+          zoomStack.val = [];
+          setFocus(items.val[0].id);
+        },
+      },
+      "Home",
+    ),
+  );
+  for (let i = 0; i < zoomStack.val.length; i++) {
+    const id = zoomStack.val[i];
+    const node = find(id);
+    crumbs.push(span({ class: "text-zinc-600 mx-1" }, "/"));
+    const zoomToLevel = i;
+    crumbs.push(
+      span(
+        {
+          class: "text-zinc-400 hover:text-zinc-200 cursor-pointer",
+          onclick: () => {
+            zoomStack.val = zoomStack.val.slice(0, zoomToLevel + 1);
+            setFocus(id);
+          },
+        },
+        node ? node.text : "?",
+      ),
+    );
+  }
+  return div(
+    { class: "h-8 flex items-center px-3 text-sm border-b border-zinc-800 overflow-hidden" },
+    ...crumbs,
+  );
+}
+
+function SearchBar() {
+  if (!searchOpen.val) {
+    // Reserve space with invisible element to prevent layout shift
+    return div({ class: "h-10 border-b border-zinc-800" });
+  }
+  return div(
+    { class: "h-10 flex items-center px-3 border-b border-zinc-800 gap-2" },
+    span({ class: "text-zinc-500 text-sm" }, "/"),
+    input({
+      type: "text",
+      class: "flex-1 bg-zinc-800 text-zinc-100 px-2 py-1 rounded outline-none border border-zinc-600 focus:border-blue-500 text-sm",
+      placeholder: "Search...",
+      value: searchQuery.val,
+      oninput: (e) => { searchQuery.val = e.target.value; },
+      onkeydown: (e) => {
+        // Prevent most keys from bubbling to global handler
+        if (e.key === "Enter" || e.key === "Escape") return;
+        e.stopPropagation();
+      },
+    }),
+    span({ class: "text-zinc-600 text-xs" }, "Enter to jump, Esc to close"),
+  );
+}
+
+function ModeIndicator() {
+  const modeLabel = mode.val.toUpperCase();
+  const colors = {
+    NAV: "bg-blue-600",
+    EDIT: "bg-amber-600",
+    SEARCH: "bg-emerald-600",
+  };
+  return div(
+    { class: "h-7 flex items-center justify-between px-3 border-t border-zinc-800 text-xs" },
+    div(
+      { class: "flex items-center gap-2" },
+      span(
+        { class: `px-2 py-0.5 rounded text-white font-medium ${colors[modeLabel] || "bg-zinc-600"}` },
+        modeLabel,
+      ),
+    ),
+    div(
+      { class: "text-zinc-600" },
+      "Zen Outliner",
+    ),
+  );
+}
+
+function ErrorBanner() {
+  if (!loadError.val) return div({ class: "h-0" });
+  return div(
+    { class: "bg-red-900/50 text-red-300 text-sm px-3 py-2 border-b border-red-800" },
+    loadError.val,
+  );
+}
+
+function App() {
+  // The entire app re-renders reactively via this binding function
+  return div(
+    { class: "flex flex-col h-screen bg-zinc-900" },
+    () => ErrorBanner(),
+    () => Breadcrumbs(),
+    () => SearchBar(),
+    () => {
+      const query = searchOpen.val ? searchQuery.val : "";
+      // Spec #66: search covers entire document, not just zoom scope
+      const displayRoot = (searchOpen.val && query) ? items.val : getViewRoot();
+      if (displayRoot.length === 0) {
+        return div(
+          { class: "flex-1 overflow-auto p-4" },
+          div(
+            { class: "text-zinc-600 text-sm italic" },
+            "Empty. Press Enter to create a node.",
+          ),
+        );
+      }
+      return div(
+        { class: "flex-1 overflow-auto py-1" },
+        TreeView({ nodes: displayRoot, depth: 0, query }),
+      );
+    },
+    () => ModeIndicator(),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-focus input elements
+// ---------------------------------------------------------------------------
+
+const observer = new MutationObserver(() => {
+  if (mode.val === "edit") {
+    const el = document.querySelector('input[type="text"]:not([placeholder])');
+    if (el && document.activeElement !== el) {
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    }
+  }
+  if (mode.val === "search") {
+    const el = document.querySelector('input[placeholder="Search..."]');
+    if (el && document.activeElement !== el) el.focus();
+  }
+  // Scroll focused node into view
+  const focusedEl = document.querySelector(`[data-node-id="${focusId.val}"]`);
+  if (focusedEl) {
+    focusedEl.scrollIntoView({ block: "nearest" });
+  }
+});
+
+observer.observe(document.body, { childList: true, subtree: true });
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+
+if (!loadFromStorage()) {
+  items.val = defaultData();
+  focusId.val = items.val[0].id;
+}
+
+try {
+  assertInvariants();
+} catch (e) {
+  surfaceError("Startup invariant check failed: " + e.message);
+  items.val = defaultData();
+  focusId.val = items.val[0].id;
+  collapsed.val = new Set();
+  zoomStack.val = [];
+}
+
+// Initial nav history
+pushNavHistory(focusId.val);
+
+van.add(document.body, App());
+</script>
+</body>
+</html>
