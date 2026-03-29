@@ -264,16 +264,34 @@
     }
 
     // spec 39-42: delete
+    const isDescendantOf = (nodeId, ancestorId) => {
+      let p = parentOf(nodeId)
+      while (p) {
+        if (p.id === ancestorId) return true
+        p = parentOf(p.id)
+      }
+      return false
+    }
+
     const deleteNode = () => {
+      const sibs = siblingsOf(focusId.val)
+      const arr = sibs.get()
+      if (arr.length <= 1 && !parentOf(focusId.val)) return  // spec 41
       const vis = getVisible()
-      if (vis.length <= 1) return  // spec 42
       pushUndo()
       const idx = vis.findIndex(v => v.node.id === focusId.val)
-      const target = idx > 0 ? vis[idx - 1] : vis[idx + 1]  // spec 40-41
-      const sibs = siblingsOf(focusId.val)
-      sibs.set(sibs.get().filter(n => n.id !== focusId.val))
-      focusId.val = target.node.id
-      pushNav(target.node.id)
+      // Find target that isn't a descendant of the node being deleted
+      let target = null
+      for (let i = idx - 1; i >= 0; i--) {
+        if (!isDescendantOf(vis[i].node.id, focusId.val)) { target = vis[i]; break }
+      }
+      if (!target) {
+        for (let i = idx + 1; i < vis.length; i++) {
+          if (!isDescendantOf(vis[i].node.id, focusId.val)) { target = vis[i]; break }
+        }
+      }
+      sibs.set(arr.filter(n => n.id !== focusId.val))
+      if (target) { focusId.val = target.node.id; pushNav(target.node.id) }
       bump()
     }
 
@@ -472,8 +490,10 @@
 
     const stored = localStorage.getItem('spike06')
     if (stored) {
-      try { items = deserialize(JSON.parse(stored)) }
-      catch { items = defaultItems() }
+      try {
+        const parsed = deserialize(JSON.parse(stored))
+        items = parsed.length ? parsed : defaultItems()  // spec 67
+      } catch { items = defaultItems() }
     } else {
       items = defaultItems()
     }
