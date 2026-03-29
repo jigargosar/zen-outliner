@@ -20,5 +20,8 @@ dist
 .parcel-cache
 *.tsbuildinfo
 
+# Temp
+docs/tmp
+
 # Elm
 elm-stuff

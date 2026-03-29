@@ -24,12 +24,8 @@ outliner in the spirit of Checkvist.
    - docs/specs-v1.md
    - CLAUDE.md
    - package.json (read only — for dependency versions)
-3. NEVER read other spikes in spikes/
-4. NEVER read docs/issues.md
-5. NEVER modify package.json
-6. NEVER read node_modules/
-7. Read VanJS documentation from https://vanjs.org before writing code
-8. Use context7 tools for library documentation when available
+3. NEVER read or modify anything else — no other spikes, no issues.md, no node_modules/
+4. Read tech stack documentation as necessary
 
 # Output
 
@@ -38,3 +34,5 @@ Create a self-contained spike in spikes/{spike_name}/ with:
 1. index.html — all application code
 2. style.css — @import "tailwindcss"
 3. vite.config.js — Vite + Tailwind plugin
+
+Do not create package.json — use root project dependencies.
