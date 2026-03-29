@@ -72,55 +72,53 @@ as behaviors are discovered, decided, or clarified.
 
 # Delete
 
-41. The document must always contain at least one node
-42. Backspace or Delete removes the focused node and all its descendants
-43. Delete does nothing if it is the last remaining node
+41. Backspace or Delete removes the focused node and all its descendants
 
 # Mark Done
 
-44. Space toggles done on the focused node
-45. Done nodes show strikethrough and dimmed text
+42. Space toggles done on the focused node
+43. Done nodes show strikethrough and dimmed text
 
 # Zoom
 
-46. z zooms into the focused node, making it the view root
-47. z does nothing if the focused node has no children
-48. Escape zooms out to the parent of the current zoom root
-49. Escape does nothing if already at the document root
-50. A breadcrumb trail shows the path from Home to the current zoom root
-51. Clicking a breadcrumb zooms to that level
-52. Outdent cannot escape the zoom boundary
+44. z zooms into the focused node, making it the view root
+45. z does nothing if the focused node has no children
+46. Escape zooms out to the parent of the current zoom root
+47. Escape does nothing if already at the document root
+48. A breadcrumb trail shows the path from Home to the current zoom root
+49. Clicking a breadcrumb zooms to that level
+50. Outdent cannot escape the zoom boundary
 
 # Navigation History
 
-53. Navigation history tracks focus changes and other sensible events, and does not capture bursts
-54. Alt+Left goes back in history
-55. Alt+Right goes forward in history
+51. Navigation history tracks focus changes and other sensible events, and does not capture bursts
+52. Alt+Left goes back in history
+53. Alt+Right goes forward in history
 
 # Undo and Redo
 
-56. Ctrl+Z undoes the last mutation, restoring tree state and focus position
-57. Ctrl+Shift+Z redoes the last undone mutation
-58. Any new mutation after undo clears the redo stack
-59. Ctrl+Z and Ctrl+Shift+Z work in all modes
+54. Ctrl+Z undoes the last mutation, restoring tree state and focus position
+55. Ctrl+Shift+Z redoes the last undone mutation
+56. Any new mutation after undo clears the redo stack
+57. Ctrl+Z and Ctrl+Shift+Z work in all modes
 
 # Search
 
-60. / opens the search input
-61. Typing filters visible nodes to those matching the query
-62. Matching text is highlighted in the results
-63. Ancestors of matching nodes stay visible to preserve tree context
-64. Enter jumps to the first match and closes search
-65. Escape closes search, clears the filter, and restores the full view
-66. Search covers the entire document, not just the zoom scope
+58. / opens the search input
+59. Typing filters visible nodes to those matching the query
+60. Matching text is highlighted in the results
+61. Ancestors of matching nodes stay visible to preserve tree context
+62. Enter jumps to the first match and closes search
+63. Escape closes search, clears the filter, and restores the full view
+64. Search covers the entire document, not just the zoom scope
 
 # Persistence
 
-67. The tree auto-saves to localStorage on every state change
-68. The tree loads from localStorage on startup
-69. If storage is empty, corrupt, or contains no nodes, default data is loaded
-70. Loading errors are surfaced to the user
-71. First launch shows a welcome list that documents the keyboard shortcuts
+65. The tree auto-saves to localStorage on every state change
+66. The tree loads from localStorage on startup
+67. If storage is empty, corrupt, or contains no nodes, default data is loaded
+68. Loading errors are surfaced to the user
+69. First launch shows a welcome list that documents the keyboard shortcuts
 
 # UX Principles
 
@@ -178,8 +176,7 @@ here describing the trap, not the fix.
 
 Assert after every state-mutating action. Throw on violation.
 
-1. items.length > 0 — document never empty
-2. find(focusId.val) !== null — focus points to real node
-3. zoomStack.every(id => find(id) !== null) — no stale zoom refs
-4. ['nav', 'edit'].includes(mode.val) — valid mode
-5. No duplicate IDs in tree — tree integrity
+1. items.length === 0 || find(focusId.val) !== null — focus points to real node or document is empty
+2. zoomStack.every(id => find(id) !== null) — no stale zoom refs
+3. ['nav', 'edit'].includes(mode.val) — valid mode
+4. No duplicate IDs in tree — tree integrity

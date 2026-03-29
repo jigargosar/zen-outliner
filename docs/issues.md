@@ -25,6 +25,15 @@ Issues
 1. Large list testing — scrolling, undo/redo with 5000+ nodes.
    Don't assume it works, verify.
 
+# Needs Spec — Editing Behavior
+
+1. Enter in edit mode creates new sibling — is this always
+   the right behavior? What about Enter to just confirm edit?
+2. Escape on empty node leaves the empty node in the tree —
+   should it delete the empty node instead?
+3. Empty document state — Enter creates a node, but what
+   should the UX feel like? Cursor placement, mode transitions?
+
 # Needs Investigation — Search UX
 
 Search needs thorough rethink. Known issues:
