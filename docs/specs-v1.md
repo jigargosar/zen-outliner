@@ -114,7 +114,7 @@ as behaviors are discovered, decided, or clarified.
 
 # Persistence
 
-65. The tree auto-saves to localStorage on every state change
+65. The tree auto-saves to localStorage on every mutation
 66. The tree loads from localStorage on startup
 67. If storage is empty, corrupt, or contains no nodes, default data is loaded
 68. Loading errors are surfaced to the user
