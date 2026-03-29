@@ -31,3 +31,15 @@ Spike 06 Issues
 1. Search input recreates on every keystroke causing lag —
    the search bar derive rebuilds the input element when
    searchQuery changes, destroying and refocusing it each time.
+
+# Needs Investigation
+
+1. Search UX needs thorough investigation:
+   a. Layout shift on open
+   b. Navigation during search — how do Up/Down work on filtered results
+   c. Enter behavior — first match? Current selection?
+   d. Where does focus land after search closes
+   e. How are parent/ancestor nodes displayed in filtered view
+   f. Hidden vs dimmed for non-matching nodes
+   g. Result count display
+   h. Live filtering vs debounced
