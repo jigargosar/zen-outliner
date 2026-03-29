@@ -73,6 +73,16 @@ Assert after every state-mutating action. Throw on violation.
 1. localStorage quota exceeded fails silently — user thinks
    data is saved but it isn't
 
+# Next Spike Setup
+
+1. Create a project-local agent for building spikes that:
+   a. Can read: docs/specs-v1.md (spec + gotchas + invariants)
+   b. Can read: docs/spike-06-issues.md (UX principles only)
+   c. Cannot read: any spike code (spikes/*)
+   d. Cannot read: issues/bugs sections
+   e. Must read VanJS documentation (or relevant lib docs)
+   f. Ensures spike independence per CLAUDE.md rule
+
 # Needs Investigation
 
 1. Search UX needs thorough investigation:
