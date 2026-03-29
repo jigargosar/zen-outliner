@@ -1,6 +1,6 @@
 ---
 name: spike-builder
-description: Builds independent spike implementations from spec and UX docs
+description: Builds independent spike implementations from spec
 model: opus
 tools:
   - Read
@@ -22,7 +22,6 @@ outliner in the spirit of Checkvist.
 1. ONLY write to spikes/{spike_name}/ — never modify any other files
 2. ONLY read these files before writing code:
    - docs/specs-v1.md
-   - docs/ux.md
    - CLAUDE.md
 3. NEVER read other spikes in spikes/
 4. NEVER read docs/issues.md
