@@ -143,7 +143,7 @@
           walk(n.children.val, depth + 1)
         }
       }
-      walk(zoomRoot(), 0)
+      walk(items, 0)  // spec 64: search entire document, not just zoom
       return result
     }
 
@@ -488,12 +488,16 @@
       ]),
     ]
 
+    let loadError = null
     const stored = localStorage.getItem('spike06')
     if (stored) {
       try {
         const parsed = deserialize(JSON.parse(stored))
         items = parsed.length ? parsed : defaultItems()  // spec 67
-      } catch { items = defaultItems() }
+      } catch (e) {
+        loadError = e  // spec 68: surface loading errors
+        items = defaultItems()
+      }
     } else {
       items = defaultItems()
     }
@@ -503,6 +507,10 @@
 
     // ── Mount ─────────────────────────────────
 
+    const errorEl = loadError
+      ? div({ class: 'bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded mb-4 text-sm' },
+          'Failed to load saved data: ' + loadError.message + '. Loaded defaults.')
+      : div()
     const bcEl = div()
     const searchEl = div()
     const treeEl = div({ class: 'outline-none', tabindex: '0' })
@@ -516,7 +524,7 @@
     }, () => searchActive.val ? 'SEARCH' : mode.val === 'edit' ? 'EDIT' : 'NAV')
 
     van.add(document.getElementById('app'),
-      div({ class: 'font-sans max-w-3xl mx-auto p-8' }, bcEl, searchEl, treeEl),
+      div({ class: 'font-sans max-w-3xl mx-auto p-8' }, errorEl, bcEl, searchEl, treeEl),
       modeEl,
     )
 
@@ -644,7 +652,17 @@
           if (e.shiftKey) outdent(); else indent()
           break
         case 'Enter':
-          e.preventDefault(); enterEdit()
+          e.preventDefault()
+          if (!items.length) {  // spec 37: empty list
+            const n = makeNode()
+            items = [n]
+            focusId.val = n.id
+            editOrigText = ''
+            mode.val = 'edit'
+            bump()
+          } else {
+            enterEdit()
+          }
           break
         case ' ':
           e.preventDefault(); toggleDone()
