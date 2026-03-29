@@ -26,12 +26,6 @@ Spike 06 Issues
    always be visible in the current view, never scrolled out
    of sight.
 
-# Bugs
-
-1. Search input recreates on every keystroke causing lag —
-   the search bar derive rebuilds the input element when
-   searchQuery changes, destroying and refocusing it each time.
-
 # Visual Issues
 
 1. Selection highlight has extremely low contrast — hard to spot
@@ -50,8 +44,9 @@ Assert after every state-mutating action. Throw on violation.
 
 # Performance
 
-1. Large list testing — search, scrolling, undo/redo with 5000+ nodes.
-   Don't assume it works, verify.
+1. Large list testing — scrolling, undo/redo with 5000+ nodes.
+   Don't assume it works, verify. (Search perf merged into
+   Search UX investigation below.)
 
 # State Issues
 
@@ -83,14 +78,19 @@ Assert after every state-mutating action. Throw on violation.
    e. Must read VanJS documentation (or relevant lib docs)
    f. Ensures spike independence per CLAUDE.md rule
 
-# Needs Investigation
+# Needs Investigation — Search UX
 
-1. Search UX needs thorough investigation:
-   a. Layout shift on open
-   b. Navigation during search — how do Up/Down work on filtered results
-   c. Enter behavior — first match? Current selection?
-   d. Where does focus land after search closes
-   e. How are parent/ancestor nodes displayed in filtered view
-   f. Hidden vs dimmed for non-matching nodes
-   g. Result count display
-   h. Live filtering vs debounced
+Search needs thorough rethink. Known issues merged here:
+
+1. Search input recreates on every keystroke causing lag —
+   the search bar derive rebuilds the input element when
+   searchQuery changes, destroying and refocusing it each time.
+2. Large list search performance — untested with 5000+ nodes
+3. Layout shift on open
+4. Navigation during search — how do Up/Down work on filtered results
+5. Enter behavior — first match? Current selection?
+6. Where does focus land after search closes
+7. How are parent/ancestor nodes displayed in filtered view
+8. Hidden vs dimmed for non-matching nodes
+9. Result count display
+10. Live filtering vs debounced
