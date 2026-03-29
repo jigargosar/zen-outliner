@@ -128,3 +128,13 @@ here describing the trap, not the fix.
 
 4. Search scoped to the current zoom root will miss matches
    in the rest of the document.
+
+# Invariants
+
+Assert after every state-mutating action. Throw on violation.
+
+1. items.length > 0 — document never empty
+2. find(focusId.val) !== null — focus points to real node
+3. zoomStack.every(id => find(id) !== null) — no stale zoom refs
+4. ['nav', 'edit'].includes(mode.val) — valid mode
+5. No duplicate IDs in tree — tree integrity
