@@ -4,6 +4,17 @@ This spec captures known behaviors, not all possible behaviors.
 It is not exhaustive. New items should be added retroactively
 as behaviors are discovered, decided, or clarified.
 
+# Tech Stack
+
+1. VanJS 1.6.0 — use van.state() for all mutable node properties
+   and app state. Use van.derive() for reactive rendering.
+   No manual render triggers or bump() patterns.
+2. Tailwind CSS 4.2.2 via @tailwindcss/vite plugin
+3. Vite 8 dev server
+4. All dependencies come from the root project's package.json.
+   Spikes must not create their own package.json.
+5. Plain JavaScript, not TypeScript
+
 # Modes
 
 1. The app starts in nav mode
