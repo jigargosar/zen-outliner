@@ -48,6 +48,31 @@ Assert after every state-mutating action. Throw on violation.
 4. ['nav', 'edit'].includes(mode.val) — valid mode
 5. No duplicate IDs in tree — tree integrity
 
+# Performance
+
+1. Large list testing — search, scrolling, undo/redo with 5000+ nodes.
+   Don't assume it works, verify.
+
+# State Issues
+
+1. Undo/redo stacks lost on page reload — in-memory only,
+   user expects undo to survive since tree auto-saves
+2. Collapsing a parent while its child is focused or being
+   edited makes the focused node invisible
+3. Concurrent tabs overwrite each other's localStorage
+4. Undo stack memory — 200 snapshots of large trees could
+   consume significant memory
+
+# Accessibility
+
+1. Tab key trap — Tab always indents, no way to Tab out of
+   the app for keyboard navigation to other page elements
+
+# Data Loss
+
+1. localStorage quota exceeded fails silently — user thinks
+   data is saved but it isn't
+
 # Needs Investigation
 
 1. Search UX needs thorough investigation:
