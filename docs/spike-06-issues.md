@@ -38,6 +38,16 @@ Spike 06 Issues
 2. App should default to dark theme — light theme hurts eyes
 3. Left border highlight and bottom mode indicator are good — keep
 
+# DBC Invariants (pending — for next spike and spec)
+
+Assert after every state-mutating action. Throw on violation.
+
+1. items.length > 0 — document never empty
+2. find(focusId.val) !== null — focus points to real node
+3. zoomStack.every(id => find(id) !== null) — no stale zoom refs
+4. ['nav', 'edit'].includes(mode.val) — valid mode
+5. No duplicate IDs in tree — tree integrity
+
 # Needs Investigation
 
 1. Search UX needs thorough investigation:
