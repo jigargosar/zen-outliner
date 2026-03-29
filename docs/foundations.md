@@ -1,15 +1,18 @@
-Foundations
+A keyboard-driven outliner for thinking in trees.
+Multi-level undo. Full change history. Every edit recoverable.
 
 # Design Philosophy
 
 - Simple, small, robust. Easy to read, easy to maintain.
 - Performance does not matter. Optimize for clarity and simplicity.
-- Dependencies and bundle size do not matter — less code is better code.
-- In fact library usage is promoted - more libraries means more robust code.
+- Dependency count and bundle size are non-issues for decisions.
+- Use libraries for more robust code — less hand-written, less to maintain.
 - Fancy is the enemy of done. Pick the boring approach.
 - Small codebase over clever codebase.
-- This applies everywhere, spikes, tests, any other code that we must maintain.
+- This applies everywhere, tests, any other code that we must maintain.
 - DX (Developer Experience) is very important.
+- All data is recoverable — saved state, in-flight edits,
+  and full change history. Nothing is silently lost.
 
 # Tech Stack
 
