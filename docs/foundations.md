@@ -1,17 +1,22 @@
 Foundations
 
-Project-level decisions and principles that apply regardless
-of implementation approach.
+# Design Philosophy
+
+- Simple, small, robust. Easy to read, easy to maintain.
+- Performance does not matter. Optimize for clarity and simplicity.
+- Dependencies and bundle size do not matter — less code is better code.
+- In fact library usage is promoted - more libraries means more robust code.
+- Fancy is the enemy of done. Pick the boring approach.
+- Small codebase over clever codebase.
+- This applies everywhere, spikes, tests, any other code that we must maintain.
+- DX (Developer Experience) is very important.
 
 # Tech Stack
 
-1. VanJS 1.6.0 — use van.state() for all mutable node properties
-   and app state. Use van.derive() for reactive rendering.
-   No manual render triggers or bump() patterns.
-2. Tailwind CSS 4.2.2 via @tailwindcss/vite plugin
-3. Vite 8 dev server
-4. All dependencies come from the root project's package.json.
-5. Plain JavaScript, not TypeScript
+1. VanJS
+2. Tailwind 4
+3. vite
+4. typescript
 
 # UX Principles
 
@@ -41,33 +46,5 @@ of implementation approach.
 
 # Visual Direction
 
-1. Dark theme by default — light theme hurts eyes
-2. Selection highlight needs high contrast — easy to spot
-3. Left border highlight on focused node — keep
-4. Bottom mode indicator (NAV/EDIT/SEARCH) — keep
-
-# Gotchas
-
-Implementation pitfalls discovered during spike development
-that repeatedly cause bugs. Add new gotchas as they are found.
-
-1. Undo/redo with serialization can silently break focus if
-   node identity is lost during the round-trip.
-
-2. Deleting a parent also removes its descendants — guards
-   based on visible node count will undercount.
-
-3. Keyboard events from focused input elements bubble to
-   global handlers, causing actions to fire twice.
-
-4. Search scoped to the current zoom root will miss matches
-   in the rest of the document.
-
-# Invariants
-
-Assert after every state-mutating action. Throw on violation.
-
-1. items.length === 0 || find(focusId.val) !== null — focus points to real node or document is empty
-2. zoomStack.every(id => find(id) !== null) — no stale zoom refs
-3. ['nav', 'edit'].includes(mode.val) — valid mode
-4. No duplicate IDs in tree — tree integrity
+1. Dark theme
+2. Bottom mode indicator (NAV/EDIT/SEARCH) — keep
