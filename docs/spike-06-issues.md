@@ -32,6 +32,12 @@ Spike 06 Issues
    the search bar derive rebuilds the input element when
    searchQuery changes, destroying and refocusing it each time.
 
+# Visual Issues
+
+1. Selection highlight has extremely low contrast — hard to spot
+2. App should default to dark theme — light theme hurts eyes
+3. Left border highlight and bottom mode indicator are good — keep
+
 # Needs Investigation
 
 1. Search UX needs thorough investigation:
