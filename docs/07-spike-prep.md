@@ -1,19 +1,11 @@
-Spike 07 — Prep Checklist
+Spike Prep
 
-# Before Building
+# After a Failed Spike
 
-1. Review docs/specs-v1.md — are behaviors, UX, tech stack complete enough?
-2. Review docs/issues.md — anything that blocks spike 07?
-3. Decide: VanJS again or try a different library?
-
-# Agent Setup
-
-1. Figure out how to create a project-local agent in Claude Code
-2. Agent must read: docs/specs-v1.md
-3. Agent must NOT read: spikes/*, docs/issues.md
-4. Agent must read VanJS docs (or chosen library docs)
-5. Agent must follow CLAUDE.md spike independence rule
-
-# Scope
-
-Build all spec behaviors.
+1. Identify what went wrong
+2. Update docs/specs-v1.md if the spec was missing info
+3. Update .claude/agents/spike-builder.md if agent rules were insufficient
+4. Update docs/issues.md if new issues were found
+5. Delete failed spike files before re-running
+6. Ensure agent can read root package.json for dependency knowledge
+7. Ensure agent has complete access to library documentation

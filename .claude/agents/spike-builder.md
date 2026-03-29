@@ -23,15 +23,13 @@ outliner in the spirit of Checkvist.
 2. ONLY read these files before writing code:
    - docs/specs-v1.md
    - CLAUDE.md
+   - package.json (read only — for dependency versions)
 3. NEVER read other spikes in spikes/
 4. NEVER read docs/issues.md
-5. NEVER read or modify package.json
+5. NEVER modify package.json
 6. NEVER read node_modules/
 7. Read VanJS documentation from https://vanjs.org before writing code
-8. Use dark theme by default
-9. Assert all invariants listed in specs-v1.md after every
-   state-mutating action. Add more if you identify them.
-   Throw on violation.
+8. Use context7 tools for library documentation when available
 
 # Output
 
