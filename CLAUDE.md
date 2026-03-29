@@ -16,9 +16,12 @@ The goal: a fast, focused tool for thinking in trees.
 - This applies everywhere, spikes, tests, any other code that we must maintain.
 - DX (Developer Experience) is is very important.
 
-# Spikes
+# Key Documents
 
-Each spike must be completely independent. Do not read other spikes
-when building a new one — reading them contaminates the implementation
-with their patterns. Read only the spec and library documentation.
-When a bug is found during spike testing, add a one-line gotcha to docs/specs-v1.md describing the trap, not the fix.
+- docs/foundations.md — tech stack, UX principles, visual direction, gotchas, invariants
+
+# Legacy
+
+NEVER read legacy/ — it contains old spike code and outdated specs.
+Do not pattern-match from legacy code. Build from foundations and
+library documentation only.
