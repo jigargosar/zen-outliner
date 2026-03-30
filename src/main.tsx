@@ -41,7 +41,7 @@ function NodeRow({ node, depth }: { node: TreeNode; depth: number }) {
       onDblClick={() => { setFocus(node.id); enterEdit() }}
     >
       <span
-        class={`w-7 h-7 flex items-center justify-center cursor-pointer text-sm shrink-0 ${
+        class={`w-7 h-7 flex items-center justify-center cursor-pointer text-base shrink-0 ${
           hasKids ? 'text-zinc-400' : 'text-zinc-600'
         }`}
         onClick={e => { e.stopPropagation(); toggleCollapse(node.id) }}
@@ -51,11 +51,15 @@ function NodeRow({ node, depth }: { node: TreeNode; depth: number }) {
       {isEditing
         ? <input
             ref={inputRef}
-            class="flex-1 bg-zinc-700 text-zinc-100 px-3 py-1.5 rounded outline-none border border-transparent focus:border-amber-500 text-base ml-1"
+            class="flex-1 bg-transparent text-zinc-100 px-0 py-0 outline-none border-b border-amber-500 text-base ml-1"
             value={node.text}
             onKeyDown={e => {
               if (e.key === 'Enter') { e.preventDefault(); commitEdit((e.target as HTMLInputElement).value) }
-              if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                const text = (e.target as HTMLInputElement).value
+                if (text === '') { cancelEdit(); deleteNode() } else { cancelEdit() }
+              }
               if (e.key === 'Backspace' && (e.target as HTMLInputElement).value === '') {
                 e.preventDefault(); cancelEdit(); deleteNode()
               }
@@ -95,23 +99,23 @@ function HelpPanel() {
   if (!showHelp.value) return null
   return (
     <div class="border-t border-zinc-800 bg-zinc-900 px-6 py-4 max-h-64 overflow-auto">
-      <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">Keyboard Shortcuts</div>
+      <div class="text-sm text-zinc-500 uppercase tracking-wide mb-3">Keyboard Shortcuts</div>
       <div class="grid grid-cols-2 gap-x-8">
         <div>
-          <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">Navigation</div>
+          <div class="text-sm text-zinc-500 uppercase tracking-wide mb-1">Navigation</div>
           <ShortcutRow keys={'↑ / ↓'} action="Move up / down" />
           <ShortcutRow keys={'←'} action="Collapse or go to parent" />
           <ShortcutRow keys={'→'} action="Expand or go to child" />
         </div>
         <div>
-          <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">Editing</div>
+          <div class="text-sm text-zinc-500 uppercase tracking-wide mb-1">Editing</div>
           <ShortcutRow keys="Enter" action="Add sibling below" />
           <ShortcutRow keys="Tab" action="Indent node" />
           <ShortcutRow keys="Shift+Tab" action="Outdent node" />
           <ShortcutRow keys="Backspace" action="Delete node" />
           <ShortcutRow keys="Space" action="Toggle done" />
-          <ShortcutRow keys="Dbl-click" action="Edit node text" />
-          <ShortcutRow keys="Escape" action="Cancel edit" />
+          <ShortcutRow keys="F2" action="Edit node text" />
+          <ShortcutRow keys="Escape" action="Cancel / delete empty" />
         </div>
       </div>
     </div>
@@ -122,11 +126,11 @@ function StatusBar() {
   const modeColor = mode.value === 'edit' ? 'bg-amber-600' : 'bg-blue-600'
   return (
     <div class="h-9 flex items-center justify-between px-4 border-t border-zinc-800 bg-zinc-900 text-sm shrink-0">
-      <span class={`px-2.5 py-0.5 rounded text-white font-medium text-xs ${modeColor}`}>
+      <span class={`px-2.5 py-0.5 rounded text-white font-medium text-sm ${modeColor}`}>
         {mode.value.toUpperCase()}
       </span>
       <button
-        class="text-zinc-500 text-xs px-2 py-1"
+        class="text-zinc-400 text-sm px-3 py-1 rounded border border-zinc-700"
         onClick={() => { showHelp.value = !showHelp.value }}
       >
         {showHelp.value ? 'Hide shortcuts' : 'Shortcuts — ?'}
@@ -164,6 +168,7 @@ document.addEventListener('keydown', e => {
     case 'ArrowRight': e.preventDefault(); expandOrChild(); break
     case 'Enter': e.preventDefault(); addSibling(); break
     case ' ': e.preventDefault(); toggleDone(); break
+    case 'F2': e.preventDefault(); enterEdit(); break
     case 'Tab':
       e.preventDefault()
       if (e.shiftKey) outdent(); else indent()
