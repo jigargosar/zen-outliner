@@ -53,6 +53,7 @@ const load = (): { tree: TreeNode[]; focusId: string } => {
     if (!raw) return { tree: defaultTree(), focusId: '' }
     const saved: SavedState = JSON.parse(raw)
     nextId = saved.nextId
+    if (!saved.tree || saved.tree.length === 0) return { tree: defaultTree(), focusId: '' }
     return { tree: saved.tree, focusId: saved.focusId }
   } catch {
     return { tree: defaultTree(), focusId: '' }
@@ -188,11 +189,15 @@ const siblingList = (id: string): TreeNode[] => {
 }
 
 const addSibling = () => {
+  const newNode = mkNode('')
   const siblings = siblingList(focusId.value)
   const idx = siblings.findIndex(n => n.id === focusId.value)
-  if (idx === -1) return
-  const newNode = mkNode('')
-  siblings.splice(idx + 1, 0, newNode)
+  if (idx === -1) {
+    // No focused node or empty tree — add to root
+    items.value.push(newNode)
+  } else {
+    siblings.splice(idx + 1, 0, newNode)
+  }
   batch(() => {
     setFocus(newNode.id)
     mode.value = 'edit'
@@ -207,14 +212,30 @@ const deleteNode = () => {
   const idx = siblings.findIndex(n => n.id === focusId.value)
   if (idx === -1) return
 
-  // Find next focus target: previous sibling, next sibling, or parent
+  // Find next focus target: previous visible, next visible, parent, or create new
   const vis = flatVisible.value
   const visIdx = vis.findIndex(v => v.node.id === focusId.value)
-  const nextFocus =
-    visIdx > 0 ? vis[visIdx - 1].node.id :
-    visIdx < vis.length - 1 ? vis[visIdx + 1].node.id : ''
+  const parent = parentOf(focusId.value)
 
   siblings.splice(idx, 1)
+
+  // Determine where focus goes
+  let nextFocus = ''
+  if (vis.length > 1) {
+    // Try next visible node (excluding the one we just deleted)
+    if (visIdx < vis.length - 1) nextFocus = vis[visIdx + 1].node.id
+    else if (visIdx > 0) nextFocus = vis[visIdx - 1].node.id
+  }
+  // If siblings list is now empty and we have a parent, focus parent
+  if (!nextFocus && parent) nextFocus = parent.id
+
+  // If tree is completely empty, create a new root node
+  if (items.value.length === 0) {
+    const newNode = mkNode('')
+    items.value.push(newNode)
+    nextFocus = newNode.id
+  }
+
   batch(() => {
     if (nextFocus) setFocus(nextFocus)
     mutate()
@@ -248,6 +269,8 @@ const outdent = () => {
 
 // ── Components ───────────────────────────────
 
+const showHelp = signal(false)
+
 function NodeRow({ node, depth }: { node: TreeNode; depth: number }) {
   const isFocused = focusId.value === node.id
   const isEditing = isFocused && mode.value === 'edit'
@@ -266,20 +289,21 @@ function NodeRow({ node, depth }: { node: TreeNode; depth: number }) {
 
   const bullet = hasKids ? (node.collapsed ? '\u25B6' : '\u25BC') : '\u2022'
 
+  // Accent: blue for NAV focus, amber for EDIT focus. Transparent border always reserved (no layout shift).
+  const focusClass = isFocused
+    ? isEditing ? 'border-l-amber-500 bg-zinc-800/80' : 'border-l-blue-500 bg-zinc-800/40'
+    : 'border-l-transparent'
+
   return (
     <div
-      class={`flex items-center py-0.5 border-l-2 ${
-        isFocused
-          ? isEditing ? 'border-amber-500 bg-zinc-800' : 'border-blue-500 bg-zinc-800/50'
-          : 'border-transparent'
-      }`}
-      style={{ paddingLeft: `${depth * 20 + 8}px` }}
+      class={`flex items-center border-l-2 ${focusClass} min-h-9 cursor-default select-none`}
+      style={{ paddingLeft: `${depth * 24 + 12}px` }}
       data-id={node.id}
       onClick={() => { setFocus(node.id); if (mode.value === 'edit') cancelEdit() }}
       onDblClick={() => { setFocus(node.id); enterEdit() }}
     >
       <span
-        class={`w-5 h-5 flex items-center justify-center cursor-pointer text-xs shrink-0 ${
+        class={`w-7 h-7 flex items-center justify-center cursor-pointer text-sm shrink-0 ${
           hasKids ? 'text-zinc-400' : 'text-zinc-600'
         }`}
         onClick={e => { e.stopPropagation(); toggleCollapse(node.id) }}
@@ -289,7 +313,7 @@ function NodeRow({ node, depth }: { node: TreeNode; depth: number }) {
       {isEditing
         ? <input
             ref={inputRef}
-            class="flex-1 bg-zinc-700 text-zinc-100 px-2 py-0.5 rounded outline-none border border-zinc-600 focus:border-blue-500 text-sm ml-1"
+            class="flex-1 bg-zinc-700 text-zinc-100 px-3 py-1.5 rounded outline-none border border-transparent focus:border-amber-500 text-base ml-1"
             value={node.text}
             onKeyDown={e => {
               if (e.key === 'Enter') { e.preventDefault(); commitEdit((e.target as HTMLInputElement).value) }
@@ -299,7 +323,7 @@ function NodeRow({ node, depth }: { node: TreeNode; depth: number }) {
               }
             }}
           />
-        : <span class={`flex-1 text-sm ml-1 py-0.5 ${node.done ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>
+        : <span class={`flex-1 text-base ml-1 py-1.5 ${node.done ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>
             {node.text || '\u00A0'}
           </span>
       }
@@ -320,12 +344,55 @@ function TreeView({ nodes, depth = 0 }: { nodes: TreeNode[]; depth?: number }) {
   )
 }
 
-function ModeIndicator() {
+function ShortcutRow({ keys, action }: { keys: string; action: string }) {
   return (
-    <div class="fixed bottom-0 left-0 right-0 h-7 flex items-center px-3 border-t border-zinc-800 bg-zinc-900 text-xs">
-      <span class={`px-2 py-0.5 rounded text-white font-medium ${mode.value === 'edit' ? 'bg-amber-600' : 'bg-blue-600'}`}>
+    <div class="flex items-center gap-4 py-1">
+      <span class="w-32 text-right text-zinc-400 font-mono text-sm shrink-0">{keys}</span>
+      <span class="text-zinc-300 text-sm">{action}</span>
+    </div>
+  )
+}
+
+function HelpPanel() {
+  if (!showHelp.value) return null
+  return (
+    <div class="border-t border-zinc-800 bg-zinc-900 px-6 py-4 max-h-64 overflow-auto">
+      <div class="text-xs text-zinc-500 uppercase tracking-wide mb-3">Keyboard Shortcuts</div>
+      <div class="grid grid-cols-2 gap-x-8">
+        <div>
+          <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">Navigation</div>
+          <ShortcutRow keys={'↑ / ↓'} action="Move up / down" />
+          <ShortcutRow keys={'←'} action="Collapse or go to parent" />
+          <ShortcutRow keys={'→'} action="Expand or go to child" />
+        </div>
+        <div>
+          <div class="text-xs text-zinc-500 uppercase tracking-wide mb-1">Editing</div>
+          <ShortcutRow keys="Enter" action="Add sibling below" />
+          <ShortcutRow keys="Tab" action="Indent node" />
+          <ShortcutRow keys="Shift+Tab" action="Outdent node" />
+          <ShortcutRow keys="Backspace" action="Delete node" />
+          <ShortcutRow keys="Space" action="Toggle done" />
+          <ShortcutRow keys="Dbl-click" action="Edit node text" />
+          <ShortcutRow keys="Escape" action="Cancel edit" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StatusBar() {
+  const modeColor = mode.value === 'edit' ? 'bg-amber-600' : 'bg-blue-600'
+  return (
+    <div class="h-9 flex items-center justify-between px-4 border-t border-zinc-800 bg-zinc-900 text-sm shrink-0">
+      <span class={`px-2.5 py-0.5 rounded text-white font-medium text-xs ${modeColor}`}>
         {mode.value.toUpperCase()}
       </span>
+      <button
+        class="text-zinc-500 text-xs px-2 py-1"
+        onClick={() => { showHelp.value = !showHelp.value }}
+      >
+        {showHelp.value ? 'Hide shortcuts' : 'Shortcuts — ?'}
+      </button>
     </div>
   )
 }
@@ -338,10 +405,11 @@ function App() {
 
   return (
     <div class="h-screen flex flex-col bg-zinc-900 text-zinc-200">
-      <div class="flex-1 overflow-auto py-2 pb-10">
+      <div class="flex-1 overflow-auto py-3 pb-12">
         <TreeView nodes={items.value} />
       </div>
-      <ModeIndicator />
+      <HelpPanel />
+      <StatusBar />
     </div>
   )
 }
@@ -364,6 +432,8 @@ document.addEventListener('keydown', e => {
       break
     case 'Backspace': case 'Delete':
       e.preventDefault(); deleteNode(); break
+    case '?':
+      e.preventDefault(); showHelp.value = !showHelp.value; break
   }
 })
 
