@@ -62,12 +62,14 @@ const load = (): { tree: TreeNode[]; focusId: string } => {
 }
 
 const save = () => {
-  const state: SavedState = {
-    tree: items.value,
-    focusId: focusId.value,
-    nextId,
-  }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  try {
+    const state: SavedState = {
+      tree: items.value,
+      focusId: focusId.value,
+      nextId,
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+  } catch { /* no localStorage in test env */ }
 }
 
 // ── Deep Clone Helper ───────────────────────
@@ -208,11 +210,6 @@ export const commitEdit = (text: string) => {
 
 // ── Tree Manipulation ───────────────────────
 
-const siblingList = (id: string): TreeNode[] => {
-  const parent = parentOf(id)
-  return parent ? parent.children : items.value
-}
-
 export const addSibling = () => {
   const newNode = mkNode('')
   const tree = cloneTree(items.value)
@@ -249,12 +246,18 @@ export const deleteNode = () => {
   const visIdx = vis.findIndex(v => v.node.id === focusId.value)
   const parent = parentOf(focusId.value)
 
-  // Determine focus target before modifying tree
+  // Determine focus target — must not be a descendant of the deleted node
   let nextFocus = ''
-  if (vis.length > 1) {
-    if (visIdx < vis.length - 1) nextFocus = vis[visIdx + 1].node.id
-    else if (visIdx > 0) nextFocus = vis[visIdx - 1].node.id
+  // Look forward for a non-descendant
+  for (let i = visIdx + 1; i < vis.length; i++) {
+    if (!isDescendant(vis[i].node.id, node)) {
+      nextFocus = vis[i].node.id
+      break
+    }
   }
+  // If nothing forward, look backward
+  if (!nextFocus && visIdx > 0) nextFocus = vis[visIdx - 1].node.id
+  // Last resort: parent
   if (!nextFocus && parent) nextFocus = parent.id
 
   // Build new tree without the deleted node
