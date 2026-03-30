@@ -21,23 +21,58 @@ const mkNode = (text: string, children: TreeNode[] = []): TreeNode => ({
   children,
 })
 
-// ── State ────────────────────────────────────
+// ── Persistence ─────────────────────────────
 
-const items = signal<TreeNode[]>([
+const STORAGE_KEY = 'zen-outliner'
+
+interface SavedState {
+  tree: TreeNode[]
+  focusId: string
+  nextId: number
+}
+
+const defaultTree = (): TreeNode[] => [
   mkNode('Welcome to Zen Outliner', [
     mkNode('Navigate with Up/Down'),
     mkNode('Left/Right to collapse/expand'),
     mkNode('Enter to edit, Escape to cancel'),
     mkNode('Space to mark done'),
+    mkNode('Enter to add sibling, Tab to indent'),
+    mkNode('Backspace on empty to delete'),
   ]),
   mkNode('Getting Started', [
     mkNode('This is a tree'),
     mkNode('Each node can have children'),
     mkNode('Try collapsing the parent nodes'),
   ]),
-])
+]
 
-const focusId = signal(items.value[0].id)
+const load = (): { tree: TreeNode[]; focusId: string } => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return { tree: defaultTree(), focusId: '' }
+    const saved: SavedState = JSON.parse(raw)
+    nextId = saved.nextId
+    return { tree: saved.tree, focusId: saved.focusId }
+  } catch {
+    return { tree: defaultTree(), focusId: '' }
+  }
+}
+
+const save = () => {
+  const state: SavedState = {
+    tree: items.value,
+    focusId: focusId.value,
+    nextId,
+  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+}
+
+// ── State ────────────────────────────────────
+
+const loaded = load()
+const items = signal<TreeNode[]>(loaded.tree)
+const focusId = signal(loaded.focusId || items.value[0]?.id || '')
 const mode = signal<'nav' | 'edit'>('nav')
 
 // ── Helpers ──────────────────────────────────
@@ -79,11 +114,11 @@ const isDescendant = (childId: string, ancestor: TreeNode): boolean => {
   return false
 }
 
-const mutate = () => { items.value = [...items.value] }
+const mutate = () => { items.value = [...items.value]; save() }
 
 // ── Actions ──────────────────────────────────
 
-const setFocus = (id: string) => { focusId.value = id }
+const setFocus = (id: string) => { focusId.value = id; save() }
 
 const moveFocus = (delta: number) => {
   const vis = flatVisible.value
@@ -145,6 +180,72 @@ const commitEdit = (text: string) => {
   })
 }
 
+// ── Tree Manipulation ───────────────────────
+
+const siblingList = (id: string): TreeNode[] => {
+  const parent = parentOf(id)
+  return parent ? parent.children : items.value
+}
+
+const addSibling = () => {
+  const siblings = siblingList(focusId.value)
+  const idx = siblings.findIndex(n => n.id === focusId.value)
+  if (idx === -1) return
+  const newNode = mkNode('')
+  siblings.splice(idx + 1, 0, newNode)
+  batch(() => {
+    setFocus(newNode.id)
+    mode.value = 'edit'
+    mutate()
+  })
+}
+
+const deleteNode = () => {
+  const node = find(focusId.value)
+  if (!node) return
+  const siblings = siblingList(focusId.value)
+  const idx = siblings.findIndex(n => n.id === focusId.value)
+  if (idx === -1) return
+
+  // Find next focus target: previous sibling, next sibling, or parent
+  const vis = flatVisible.value
+  const visIdx = vis.findIndex(v => v.node.id === focusId.value)
+  const nextFocus =
+    visIdx > 0 ? vis[visIdx - 1].node.id :
+    visIdx < vis.length - 1 ? vis[visIdx + 1].node.id : ''
+
+  siblings.splice(idx, 1)
+  batch(() => {
+    if (nextFocus) setFocus(nextFocus)
+    mutate()
+  })
+}
+
+const indent = () => {
+  const siblings = siblingList(focusId.value)
+  const idx = siblings.findIndex(n => n.id === focusId.value)
+  if (idx <= 0) return // Can't indent first child — no previous sibling to become parent
+  const node = siblings[idx]
+  const newParent = siblings[idx - 1]
+  siblings.splice(idx, 1)
+  newParent.children.push(node)
+  newParent.collapsed = false
+  mutate()
+}
+
+const outdent = () => {
+  const parent = parentOf(focusId.value)
+  if (!parent) return // Already at root level
+  const grandparentList = siblingList(parent.id)
+  const parentIdx = grandparentList.findIndex(n => n.id === parent.id)
+  const childIdx = parent.children.findIndex(n => n.id === focusId.value)
+  if (childIdx === -1 || parentIdx === -1) return
+  const node = parent.children[childIdx]
+  parent.children.splice(childIdx, 1)
+  grandparentList.splice(parentIdx + 1, 0, node)
+  mutate()
+}
+
 // ── Components ───────────────────────────────
 
 function NodeRow({ node, depth }: { node: TreeNode; depth: number }) {
@@ -193,6 +294,9 @@ function NodeRow({ node, depth }: { node: TreeNode; depth: number }) {
             onKeyDown={e => {
               if (e.key === 'Enter') { e.preventDefault(); commitEdit((e.target as HTMLInputElement).value) }
               if (e.key === 'Escape') { e.preventDefault(); cancelEdit() }
+              if (e.key === 'Backspace' && (e.target as HTMLInputElement).value === '') {
+                e.preventDefault(); cancelEdit(); deleteNode()
+              }
             }}
           />
         : <span class={`flex-1 text-sm ml-1 py-0.5 ${node.done ? 'line-through text-zinc-500' : 'text-zinc-200'}`}>
@@ -252,8 +356,14 @@ document.addEventListener('keydown', e => {
     case 'ArrowDown': e.preventDefault(); moveFocus(1); break
     case 'ArrowLeft': e.preventDefault(); collapseOrParent(); break
     case 'ArrowRight': e.preventDefault(); expandOrChild(); break
-    case 'Enter': e.preventDefault(); enterEdit(); break
+    case 'Enter': e.preventDefault(); addSibling(); break
     case ' ': e.preventDefault(); toggleDone(); break
+    case 'Tab':
+      e.preventDefault()
+      if (e.shiftKey) outdent(); else indent()
+      break
+    case 'Backspace': case 'Delete':
+      e.preventDefault(); deleteNode(); break
   }
 })
 
