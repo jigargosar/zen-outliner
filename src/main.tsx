@@ -1,5 +1,5 @@
 import { render } from 'preact'
-import { signal, computed } from '@preact/signals'
+import { signal, computed, batch } from '@preact/signals'
 import { useRef, useEffect } from 'preact/hooks'
 
 // ── Data ─────────────────────────────────────
@@ -85,16 +85,11 @@ const mutate = () => { items.value = [...items.value] }
 
 const setFocus = (id: string) => { focusId.value = id }
 
-const moveUp = () => {
+const moveFocus = (delta: number) => {
   const vis = flatVisible.value
   const idx = vis.findIndex(v => v.node.id === focusId.value)
-  if (idx > 0) setFocus(vis[idx - 1].node.id)
-}
-
-const moveDown = () => {
-  const vis = flatVisible.value
-  const idx = vis.findIndex(v => v.node.id === focusId.value)
-  if (idx < vis.length - 1) setFocus(vis[idx + 1].node.id)
+  const next = idx + delta
+  if (next >= 0 && next < vis.length) setFocus(vis[next].node.id)
 }
 
 const collapseOrParent = () => {
@@ -130,9 +125,11 @@ const toggleDone = () => {
 const toggleCollapse = (id: string) => {
   const node = find(id)
   if (!node || node.children.length === 0) return
-  if (!node.collapsed && isDescendant(focusId.value, node)) setFocus(node.id)
-  node.collapsed = !node.collapsed
-  mutate()
+  batch(() => {
+    if (!node.collapsed && isDescendant(focusId.value, node)) setFocus(node.id)
+    node.collapsed = !node.collapsed
+    mutate()
+  })
 }
 
 const enterEdit = () => { mode.value = 'edit' }
@@ -141,9 +138,11 @@ const cancelEdit = () => { mode.value = 'nav' }
 const commitEdit = (text: string) => {
   const node = find(focusId.value)
   if (!node) return
-  node.text = text
-  mode.value = 'nav'
-  mutate()
+  batch(() => {
+    node.text = text
+    mode.value = 'nav'
+    mutate()
+  })
 }
 
 // ── Components ───────────────────────────────
@@ -231,7 +230,7 @@ function App() {
   useEffect(() => {
     const el = document.querySelector(`[data-id="${focusId.value}"]`)
     if (el) el.scrollIntoView({ block: 'nearest' })
-  })
+  }, [focusId.value])
 
   return (
     <div class="h-screen flex flex-col bg-zinc-900 text-zinc-200">
@@ -249,8 +248,8 @@ document.addEventListener('keydown', e => {
   if (mode.value === 'edit') return
 
   switch (e.key) {
-    case 'ArrowUp': e.preventDefault(); moveUp(); break
-    case 'ArrowDown': e.preventDefault(); moveDown(); break
+    case 'ArrowUp': e.preventDefault(); moveFocus(-1); break
+    case 'ArrowDown': e.preventDefault(); moveFocus(1); break
     case 'ArrowLeft': e.preventDefault(); collapseOrParent(); break
     case 'ArrowRight': e.preventDefault(); expandOrChild(); break
     case 'Enter': e.preventDefault(); enterEdit(); break

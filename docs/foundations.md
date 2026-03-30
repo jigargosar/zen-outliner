@@ -16,7 +16,7 @@ Multi-level undo. Full change history. Every edit recoverable.
 
 # Tech Stack
 
-1. VanJS
+1. Preact + Signals
 2. Tailwind 4
 3. vite
 4. typescript
