@@ -19,8 +19,11 @@ Rules for status reports:
 6. Before writing a new report, diff against the current one to ensure
    nothing disappeared without explanation
 
-If you are a new agent: read the latest file in docs/status/ first.
-Also read docs/discuss-later.md for deferred architectural topics.
+If you are a new agent: read these in order:
+1. Latest file in docs/status/ — current state and priorities
+2. docs/bugs.md — all known bugs, what's resolved, what's open
+3. docs/protocol.md — shipping checklist, follow before every push
+4. docs/discuss-later.md — deferred architectural topics
 
 # Legacy
 
