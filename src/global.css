@@ -1,1 +1,10 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
+
+@theme {
+  --default-font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+body {
+  @apply bg-zinc-950 text-zinc-400 antialiased;
+}
