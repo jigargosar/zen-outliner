@@ -29,7 +29,7 @@ Live: https://jigargosar.github.io/zen-outliner/
 ## Data Safety
 
 16. Ctrl+Z — Undo last structural change (50 deep)
-17. Ctrl+E — Export tree as JSON file
+17. Ctrl+S — Export tree as JSON file
 18. Auto-save — localStorage on every change
 19. Auto-load — Restore tree + focus on page load
 

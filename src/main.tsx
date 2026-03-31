@@ -117,7 +117,7 @@ function HelpPanel() {
           <ShortcutRow keys="F2" action="Edit node text" />
           <ShortcutRow keys="Escape" action="Cancel / delete empty" />
           <ShortcutRow keys="Ctrl+Z" action="Undo" />
-          <ShortcutRow keys="Ctrl+E" action="Export JSON backup" />
+          <ShortcutRow keys="Ctrl+S" action="Export JSON backup" />
         </div>
       </div>
     </div>
@@ -180,7 +180,7 @@ document.addEventListener('keydown', e => {
     case 'z':
       if (e.ctrlKey || e.metaKey) { e.preventDefault(); undo(); break }
       break
-    case 'e':
+    case 's':
       if (e.ctrlKey || e.metaKey) { e.preventDefault(); exportJSON(); break }
       break
     case '?':
