@@ -21,7 +21,7 @@ const NodeView = observer(({ node }: { node: OutlineNode }) => {
                         className={`transition-transform duration-150 ${!node.collapsed ? 'rotate-90' : ''}`}
                     />
                 </button>
-                <span className="text-zinc-200 text-base select-none">{node.text}</span>
+                <span className="text-zinc-400 text-base select-none">{node.text}</span>
             </div>
             {hasChildren && !node.collapsed && (
                 <div className="ml-6">

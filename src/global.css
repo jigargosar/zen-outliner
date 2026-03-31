@@ -3,7 +3,7 @@
 
 body {
     font-family: 'JetBrains Mono Variable', monospace;
-    background-color: var(--color-zinc-950);
-    color: var(--color-zinc-200);
+    background-color: var(--color-zinc-900);
+    color: var(--color-zinc-400);
     -webkit-font-smoothing: antialiased;
 }
