@@ -57,20 +57,25 @@ const NodeView = observer(({ node }: { node: OutlineNode }) => {
 export const App = observer(() => {
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            if (e.key !== 'j' && e.key !== 'k') return
-
             const visible = getVisibleNodes(store.children)
             if (visible.length === 0) return
 
             const currentId = selectedId.get()
             const currentIndex = currentId ? visible.findIndex((n) => n.id === currentId) : -1
+            const currentNode = currentIndex >= 0 ? visible[currentIndex] : null
 
             if (e.key === 'j') {
                 const next = currentIndex < visible.length - 1 ? currentIndex + 1 : 0
                 selectedId.set(visible[next].id)
-            } else {
+            } else if (e.key === 'k') {
                 const prev = currentIndex > 0 ? currentIndex - 1 : visible.length - 1
                 selectedId.set(visible[prev].id)
+            } else if (e.key === 'l' && currentNode && currentNode.children.length > 0 && currentNode.collapsed) {
+                TOutlineNode.toggleCollapse(currentNode)
+            } else if (e.key === 'h' && currentNode && currentNode.children.length > 0 && !currentNode.collapsed) {
+                TOutlineNode.toggleCollapse(currentNode)
+            } else {
+                return
             }
         }
 
