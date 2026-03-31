@@ -128,9 +128,38 @@ export const isDescendant = (childId: string, ancestor: TreeNode): boolean => {
   return false
 }
 
+// ── Undo Stack ──────────────────────────────
+
+interface Snapshot {
+  tree: TreeNode[]
+  focusId: string
+}
+
+const undoStack: Snapshot[] = []
+const MAX_UNDO = 50
+
+const pushUndo = () => {
+  undoStack.push({ tree: items.value, focusId: focusId.value })
+  if (undoStack.length > MAX_UNDO) undoStack.shift()
+}
+
+export const undo = () => {
+  const snapshot = undoStack.pop()
+  if (!snapshot) return
+  batch(() => {
+    items.value = snapshot.tree
+    focusId.value = snapshot.focusId
+    mode.value = 'nav'
+    save()
+  })
+}
+
+export const canUndo = () => undoStack.length > 0
+
 // ── Immutable Update ────────────────────────
 
 const commit = (newTree: TreeNode[]) => {
+  pushUndo()
   items.value = newTree
   save()
 }
@@ -333,4 +362,5 @@ export const initForTest = (tree: TreeNode[], focus?: string) => {
   items.value = tree
   focusId.value = focus || tree[0]?.id || ''
   mode.value = 'nav'
+  undoStack.length = 0
 }

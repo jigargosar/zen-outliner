@@ -4,7 +4,7 @@ import {
   items, focusId, mode, find, flatVisible,
   moveFocus, collapseOrParent, expandOrChild,
   toggleDone, enterEdit, cancelEdit, commitEdit,
-  addSibling, deleteNode, indent, outdent,
+  addSibling, deleteNode, indent, outdent, undo, canUndo,
 } from './store'
 
 // Helper: build a simple test tree with predictable IDs
@@ -263,5 +263,82 @@ describe('outdent', () => {
     outdent()
     const p = find(parent.id)!
     expect(p.children.length).toBe(0)
+  })
+})
+
+describe('undo', () => {
+  it('undoes toggleDone', () => {
+    const { a } = setup()
+    expect(find(a.id)!.done).toBe(false)
+    toggleDone()
+    expect(find(a.id)!.done).toBe(true)
+    undo()
+    expect(find(a.id)!.done).toBe(false)
+  })
+
+  it('undoes delete and restores focus', () => {
+    const { b } = setup()
+    focusId.value = b.id
+    deleteNode()
+    expect(find(b.id)).toBeNull()
+    undo()
+    expect(find(b.id)).not.toBeNull()
+    expect(focusId.value).toBe(b.id)
+  })
+
+  it('undoes addSibling', () => {
+    const { b } = setup()
+    focusId.value = b.id
+    const countBefore = flatVisible.value.length
+    addSibling()
+    expect(flatVisible.value.length).toBeGreaterThan(countBefore)
+    undo()
+    expect(flatVisible.value.length).toBe(countBefore)
+  })
+
+  it('undoes indent', () => {
+    const { a, b } = setup()
+    focusId.value = b.id
+    indent()
+    expect(find(a.id)!.children.some(c => c.id === b.id)).toBe(true)
+    undo()
+    expect(items.value.some(n => n.id === b.id)).toBe(true)
+  })
+
+  it('undoes commitEdit', () => {
+    const { a } = setup()
+    enterEdit()
+    commitEdit('Changed')
+    expect(find(a.id)!.text).toBe('Changed')
+    undo()
+    expect(find(a.id)!.text).toBe('A')
+  })
+
+  it('canUndo returns false initially', () => {
+    setup()
+    expect(canUndo()).toBe(false)
+  })
+
+  it('canUndo returns true after a mutation', () => {
+    setup()
+    toggleDone()
+    expect(canUndo()).toBe(true)
+  })
+
+  it('does nothing when stack is empty', () => {
+    const { a } = setup()
+    const treeBefore = items.value
+    undo()
+    expect(items.value).toBe(treeBefore)
+    expect(focusId.value).toBe(a.id)
+  })
+
+  it('sets mode to nav on undo', () => {
+    setup()
+    enterEdit()
+    commitEdit('test')
+    mode.value = 'edit'
+    undo()
+    expect(mode.value).toBe('nav')
   })
 })

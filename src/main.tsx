@@ -5,7 +5,7 @@ import {
   items, focusId, mode, showHelp,
   setFocus, moveFocus, collapseOrParent, expandOrChild,
   toggleDone, toggleCollapse, enterEdit, cancelEdit, commitEdit,
-  addSibling, deleteNode, indent, outdent,
+  addSibling, deleteNode, indent, outdent, undo,
 } from './store'
 
 // ── Components ───────────────────────────────
@@ -116,6 +116,7 @@ function HelpPanel() {
           <ShortcutRow keys="Space" action="Toggle done" />
           <ShortcutRow keys="F2" action="Edit node text" />
           <ShortcutRow keys="Escape" action="Cancel / delete empty" />
+          <ShortcutRow keys="Ctrl+Z" action="Undo" />
         </div>
       </div>
     </div>
@@ -175,6 +176,9 @@ document.addEventListener('keydown', e => {
       break
     case 'Backspace': case 'Delete':
       e.preventDefault(); deleteNode(); break
+    case 'z':
+      if (e.ctrlKey || e.metaKey) { e.preventDefault(); undo(); break }
+      break
     case '?':
       e.preventDefault(); showHelp.value = !showHelp.value; break
   }
