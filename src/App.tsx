@@ -17,42 +17,43 @@ const demo = node<OutlineStore>({
   ],
 })
 
-const Bullet = ({ hasChildren, collapsed, onToggle }: {
-  hasChildren: boolean
-  collapsed: boolean
-  onToggle: () => void
-}) => (
-  <span className="w-6 shrink-0 flex items-center justify-center text-zinc-400">
-    {hasChildren ? (
-      <button onClick={onToggle} className="hover:text-zinc-200">
-        {collapsed ? '▶' : '▼'}
-      </button>
-    ) : (
-      <span className="block w-1.5 h-1.5 rounded-full bg-zinc-500" />
-    )}
-  </span>
+const Chevron = ({ collapsed }: { collapsed: boolean }) => (
+  <svg
+    viewBox="0 0 10 10"
+    className={`w-4 h-4 fill-zinc-400 transition-transform ${collapsed ? '' : 'rotate-90'}`}
+  >
+    <path d="M2 1l6 4-6 4z" />
+  </svg>
 )
 
-const NodeView = observer(({ n, depth = 0 }: { n: OutlineNode; depth?: number }) => (
-  <div style={{ paddingLeft: depth * 24 }}>
-    <div className="flex items-center gap-2 h-9">
-      <Bullet
-        hasChildren={n.children.length > 0}
-        collapsed={n.collapsed}
-        onToggle={() => TOutlineNode.toggleCollapse(n)}
-      />
+const NodeView = observer(({ n }: { n: OutlineNode }) => (
+  <div>
+    <div className="group flex items-center gap-4 h-11 rounded px-2 -mx-2 hover:bg-zinc-900">
+      <span className="w-6 shrink-0 flex items-center justify-center">
+        {n.children.length > 0 ? (
+          <button onClick={() => TOutlineNode.toggleCollapse(n)}>
+            <Chevron collapsed={n.collapsed} />
+          </button>
+        ) : (
+          <span className="block w-2.5 h-2.5 rounded-full bg-zinc-500 group-hover:bg-zinc-400" />
+        )}
+      </span>
       <span className="text-zinc-200">
-        {n.text || <span className="text-zinc-500 italic">empty</span>}
+        {n.text || <span className="text-zinc-600 italic">empty</span>}
       </span>
     </div>
-    {!n.collapsed && n.children.map(child => (
-      <NodeView key={child.id} n={child} depth={depth + 1} />
-    ))}
+    {!n.collapsed && n.children.length > 0 && (
+      <div className="pl-8">
+        {n.children.map(child => (
+          <NodeView key={child.id} n={child} />
+        ))}
+      </div>
+    )}
   </div>
 ))
 
 export const App = observer(() => (
-  <div className="max-w-3xl mx-auto p-10 text-lg">
+  <div className="max-w-3xl mx-auto px-12 py-16 text-lg">
     {demo.children.map(child => (
       <NodeView key={child.id} n={child} />
     ))}
