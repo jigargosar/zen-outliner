@@ -28,14 +28,14 @@ const Chevron = ({ collapsed }: { collapsed: boolean }) => (
 
 const NodeView = observer(({ n }: { n: OutlineNode }) => (
   <div>
-    <div className="group flex items-center gap-4 h-11 rounded px-2 -mx-2 hover:bg-zinc-900">
+    <div className="flex items-center gap-4 h-11 px-2 -mx-2">
       <span className="w-6 shrink-0 flex items-center justify-center">
         {n.children.length > 0 ? (
           <button onClick={() => TOutlineNode.toggleCollapse(n)}>
             <Chevron collapsed={n.collapsed} />
           </button>
         ) : (
-          <span className="block w-2.5 h-2.5 rounded-full bg-zinc-500 group-hover:bg-zinc-400" />
+          <span className="block w-2 h-2 rounded-full bg-zinc-500" />
         )}
       </span>
       <span className="text-zinc-200">
