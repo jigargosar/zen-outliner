@@ -7,20 +7,24 @@ const NodeView = observer(({ node }: { node: OutlineNode }) => {
 
     return (
         <div>
-            <div className="flex items-center gap-2 py-1">
+            <div className="flex items-center gap-2 py-0.5">
                 <button
-                    className={`w-5 h-5 flex items-center justify-center text-zinc-600 hover:text-zinc-400 transition-transform duration-150 ${
+                    className={`w-8 h-8 flex-none flex items-center justify-center rounded hover:bg-zinc-800 text-zinc-600 hover:text-zinc-400 transition-all duration-150 ${
                         hasChildren ? 'cursor-pointer' : 'invisible'
-                    } ${!node.collapsed ? 'rotate-90' : ''}`}
+                    }`}
                     onClick={() => TOutlineNode.toggleCollapse(node)}
                     tabIndex={-1}
                 >
-                    <ChevronRight size={16} strokeWidth={2} />
+                    <ChevronRight
+                        size={14}
+                        strokeWidth={2}
+                        className={`transition-transform duration-150 ${!node.collapsed ? 'rotate-90' : ''}`}
+                    />
                 </button>
                 <span className="text-zinc-200 text-base select-none">{node.text}</span>
             </div>
             {hasChildren && !node.collapsed && (
-                <div className="ml-7">
+                <div className="ml-6">
                     {node.children.map((child) => (
                         <NodeView key={child.id} node={child} />
                     ))}
