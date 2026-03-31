@@ -1,4 +1,5 @@
 import { node, nodeType, TNode, getParent } from 'mobx-bonsai'
+import { observable } from 'mobx'
 
 // --- Node type ---
 
@@ -81,5 +82,9 @@ export const store = node<OutlineStore>({
         TOutlineNode({ id: crypto.randomUUID(), text: 'Notes' }),
     ],
 })
+
+// --- UI state ---
+
+export const selectedId = observable.box<string | null>(null)
 
 export type { OutlineNode, OutlineStore }

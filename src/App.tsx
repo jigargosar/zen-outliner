@@ -1,9 +1,10 @@
 import { observer } from 'mobx-react-lite'
 import { ChevronRight } from 'lucide-react'
-import { store, TOutlineNode, type OutlineNode } from './store'
+import { store, TOutlineNode, selectedId, type OutlineNode } from './store'
 
 const NodeView = observer(({ node }: { node: OutlineNode }) => {
     const hasChildren = node.children.length > 0
+    const isSelected = selectedId.get() === node.id
 
     return (
         <div>
@@ -12,7 +13,7 @@ const NodeView = observer(({ node }: { node: OutlineNode }) => {
                     className={`w-8 h-8 flex-none flex items-center justify-center rounded hover:bg-zinc-800 text-zinc-600 hover:text-zinc-400 transition-all duration-150 ${
                         hasChildren ? 'cursor-pointer' : 'invisible'
                     }`}
-                    onClick={() => TOutlineNode.toggleCollapse(node)}
+                    onClick={(e) => { e.stopPropagation(); TOutlineNode.toggleCollapse(node) }}
                     tabIndex={-1}
                 >
                     <ChevronRight
@@ -21,10 +22,17 @@ const NodeView = observer(({ node }: { node: OutlineNode }) => {
                         className={`transition-transform duration-150 ${!node.collapsed ? 'rotate-90' : ''}`}
                     />
                 </button>
-                <span className="text-zinc-400 text-base select-none">{node.text}</span>
+                <span
+                    className={`flex-1 text-zinc-400 text-base select-none py-1 px-2 rounded cursor-pointer ${
+                        isSelected ? 'bg-zinc-800' : 'hover:bg-zinc-800/50'
+                    }`}
+                    onClick={() => selectedId.set(node.id)}
+                >
+                    {node.text}
+                </span>
             </div>
             {hasChildren && !node.collapsed && (
-                <div className="ml-6">
+                <div className="ml-10">
                     {node.children.map((child) => (
                         <NodeView key={child.id} node={child} />
                     ))}
