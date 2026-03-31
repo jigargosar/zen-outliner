@@ -23,5 +23,9 @@ dist
 # Temp
 docs/tmp
 
+# Playwright
+test-results
+playwright-report
+
 # Elm
 elm-stuff
