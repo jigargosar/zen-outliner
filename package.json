@@ -22,7 +22,9 @@
         "vitest": "4.1.2"
     },
     "dependencies": {
+        "@fontsource-variable/jetbrains-mono": "5.2.8",
         "fractional-indexing": "3.2.0",
+        "lucide-react": "1.7.0",
         "mobx": "6.15.0",
         "mobx-bonsai": "2.3.0",
         "mobx-react-lite": "4.1.1",

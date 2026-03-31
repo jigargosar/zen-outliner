@@ -54,9 +54,32 @@ export function getSiblings(n: OutlineNode): OutlineNode[] {
 // --- Singleton ---
 
 export const store = node<OutlineStore>({
-  children: [
-    TOutlineNode({ id: crypto.randomUUID(), text: '' }),
-  ],
+    children: [
+        TOutlineNode({
+            id: crypto.randomUUID(),
+            text: 'Getting started',
+            children: [
+                TOutlineNode({ id: crypto.randomUUID(), text: 'Install dependencies' }),
+                TOutlineNode({ id: crypto.randomUUID(), text: 'Run the dev server' }),
+            ],
+        }),
+        TOutlineNode({
+            id: crypto.randomUUID(),
+            text: 'Features',
+            children: [
+                TOutlineNode({
+                    id: crypto.randomUUID(),
+                    text: 'Tree editing',
+                    children: [
+                        TOutlineNode({ id: crypto.randomUUID(), text: 'Expand and collapse' }),
+                        TOutlineNode({ id: crypto.randomUUID(), text: 'Inline text editing' }),
+                    ],
+                }),
+                TOutlineNode({ id: crypto.randomUUID(), text: 'Keyboard shortcuts' }),
+            ],
+        }),
+        TOutlineNode({ id: crypto.randomUUID(), text: 'Notes' }),
+    ],
 })
 
 export type { OutlineNode, OutlineStore }

@@ -1,1 +1,9 @@
-@import "tailwindcss";
+@import 'tailwindcss';
+@import '@fontsource-variable/jetbrains-mono';
+
+body {
+    font-family: 'JetBrains Mono Variable', monospace;
+    background-color: var(--color-zinc-950);
+    color: var(--color-zinc-200);
+    -webkit-font-smoothing: antialiased;
+}
