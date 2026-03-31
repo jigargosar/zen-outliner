@@ -356,6 +356,19 @@ export const outdent = () => {
   commit(tree)
 }
 
+// ── Export ───────────────────────────────────
+
+export const exportJSON = () => {
+  const data = JSON.stringify({ tree: items.value, focusId: focusId.value, nextId }, null, 2)
+  const blob = new Blob([data], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `zen-outliner-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 // ── Test Helpers ─────────────────────────────
 
 export const initForTest = (tree: TreeNode[], focus?: string) => {
