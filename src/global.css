@@ -1,6 +1,10 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/jetbrains-mono';
 
+html {
+    scrollbar-gutter: stable;
+}
+
 body {
     font-family: 'JetBrains Mono Variable', monospace;
     background-color: var(--color-zinc-900);
