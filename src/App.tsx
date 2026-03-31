@@ -1,6 +1,18 @@
+import { useEffect } from 'react'
 import { observer } from 'mobx-react-lite'
 import { ChevronRight } from 'lucide-react'
 import { store, TOutlineNode, selectedId, type OutlineNode } from './store'
+
+function getVisibleNodes(nodes: OutlineNode[]): OutlineNode[] {
+    const result: OutlineNode[] = []
+    for (const node of nodes) {
+        result.push(node)
+        if (node.children.length > 0 && !node.collapsed) {
+            result.push(...getVisibleNodes(node.children))
+        }
+    }
+    return result
+}
 
 const NodeView = observer(({ node }: { node: OutlineNode }) => {
     const hasChildren = node.children.length > 0
@@ -42,10 +54,35 @@ const NodeView = observer(({ node }: { node: OutlineNode }) => {
     )
 })
 
-export const App = observer(() => (
-    <div id="zen-outliner" className="max-w-2xl mx-auto px-8 py-12">
-        {store.children.map((child) => (
-            <NodeView key={child.id} node={child} />
-        ))}
-    </div>
-))
+export const App = observer(() => {
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key !== 'j' && e.key !== 'k') return
+
+            const visible = getVisibleNodes(store.children)
+            if (visible.length === 0) return
+
+            const currentId = selectedId.get()
+            const currentIndex = currentId ? visible.findIndex((n) => n.id === currentId) : -1
+
+            if (e.key === 'j') {
+                const next = currentIndex < visible.length - 1 ? currentIndex + 1 : 0
+                selectedId.set(visible[next].id)
+            } else {
+                const prev = currentIndex > 0 ? currentIndex - 1 : visible.length - 1
+                selectedId.set(visible[prev].id)
+            }
+        }
+
+        document.addEventListener('keydown', handleKeyDown)
+        return () => document.removeEventListener('keydown', handleKeyDown)
+    }, [])
+
+    return (
+        <div id="zen-outliner" className="max-w-2xl mx-auto px-8 py-12">
+            {store.children.map((child) => (
+                <NodeView key={child.id} node={child} />
+            ))}
+        </div>
+    )
+})
