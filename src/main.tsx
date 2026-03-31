@@ -5,7 +5,7 @@ import {
   items, focusId, mode, showHelp,
   setFocus, moveFocus, collapseOrParent, expandOrChild,
   toggleDone, toggleCollapse, enterEdit, cancelEdit, commitEdit,
-  addSibling, deleteNode, indent, outdent, undo, exportJSON,
+  addSibling, deleteNode, indent, outdent, moveUp, moveDown, undo, exportJSON,
 } from './store'
 
 // ── Components ───────────────────────────────
@@ -112,6 +112,7 @@ function HelpPanel() {
           <ShortcutRow keys="Enter" action="Add sibling below" />
           <ShortcutRow keys="Tab" action="Indent node" />
           <ShortcutRow keys="Shift+Tab" action="Outdent node" />
+          <ShortcutRow keys="Alt+↑/↓" action="Move node up / down" />
           <ShortcutRow keys="Backspace" action="Delete node" />
           <ShortcutRow keys="Space" action="Toggle done" />
           <ShortcutRow keys="F2" action="Edit node text" />
@@ -164,8 +165,14 @@ document.addEventListener('keydown', e => {
   if (mode.value === 'edit') return
 
   switch (e.key) {
-    case 'ArrowUp': e.preventDefault(); moveFocus(-1); break
-    case 'ArrowDown': e.preventDefault(); moveFocus(1); break
+    case 'ArrowUp':
+      e.preventDefault()
+      if (e.altKey) moveUp(); else moveFocus(-1)
+      break
+    case 'ArrowDown':
+      e.preventDefault()
+      if (e.altKey) moveDown(); else moveFocus(1)
+      break
     case 'ArrowLeft': e.preventDefault(); collapseOrParent(); break
     case 'ArrowRight': e.preventDefault(); expandOrChild(); break
     case 'Enter': e.preventDefault(); addSibling(); break

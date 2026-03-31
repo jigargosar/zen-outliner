@@ -356,6 +356,36 @@ export const outdent = () => {
   commit(tree)
 }
 
+// ── Move Up/Down ────────────────────────────
+
+export const moveUp = () => {
+  const currentId = focusId.value
+  const parent = parentOf(currentId)
+  const tree = cloneTree(items.value)
+  const clonedParent = parent ? find(parent.id, tree) : null
+  const siblings = clonedParent ? clonedParent.children : tree
+
+  const idx = siblings.findIndex(n => n.id === currentId)
+  if (idx <= 0) return
+
+  ;[siblings[idx - 1], siblings[idx]] = [siblings[idx], siblings[idx - 1]]
+  commit(tree)
+}
+
+export const moveDown = () => {
+  const currentId = focusId.value
+  const parent = parentOf(currentId)
+  const tree = cloneTree(items.value)
+  const clonedParent = parent ? find(parent.id, tree) : null
+  const siblings = clonedParent ? clonedParent.children : tree
+
+  const idx = siblings.findIndex(n => n.id === currentId)
+  if (idx === -1 || idx >= siblings.length - 1) return
+
+  ;[siblings[idx], siblings[idx + 1]] = [siblings[idx + 1], siblings[idx]]
+  commit(tree)
+}
+
 // ── Export ───────────────────────────────────
 
 export const exportJSON = () => {

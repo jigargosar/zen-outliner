@@ -4,7 +4,7 @@ import {
   items, focusId, mode, find, flatVisible,
   moveFocus, collapseOrParent, expandOrChild,
   toggleDone, enterEdit, cancelEdit, commitEdit,
-  addSibling, deleteNode, indent, outdent, undo, canUndo,
+  addSibling, deleteNode, indent, outdent, moveUp, moveDown, undo, canUndo,
 } from './store'
 
 // Helper: build a simple test tree with predictable IDs
@@ -340,5 +340,69 @@ describe('undo', () => {
     mode.value = 'edit'
     undo()
     expect(mode.value).toBe('nav')
+  })
+})
+
+describe('moveUp / moveDown', () => {
+  it('moves node up among root siblings', () => {
+    const { b } = setup()
+    focusId.value = b.id
+    moveUp()
+    expect(items.value[0].id).toBe(b.id)
+    expect(items.value[1].text).toBe('A')
+  })
+
+  it('moves node down among root siblings', () => {
+    const { a, b } = setup()
+    moveDown()
+    expect(items.value[0].id).toBe(b.id)
+    expect(items.value[1].id).toBe(a.id)
+  })
+
+  it('moves child node up within parent', () => {
+    const { a, a1, a2 } = setup()
+    focusId.value = a2.id
+    moveUp()
+    const parent = find(a.id)!
+    expect(parent.children[0].id).toBe(a2.id)
+    expect(parent.children[1].id).toBe(a1.id)
+  })
+
+  it('moves child node down within parent', () => {
+    const { a, a1, a2 } = setup()
+    focusId.value = a1.id
+    moveDown()
+    const parent = find(a.id)!
+    expect(parent.children[0].id).toBe(a2.id)
+    expect(parent.children[1].id).toBe(a1.id)
+  })
+
+  it('does nothing when node is first sibling and moveUp', () => {
+    const { a } = setup()
+    moveUp()
+    expect(items.value[0].id).toBe(a.id)
+  })
+
+  it('does nothing when node is last sibling and moveDown', () => {
+    const { c } = setup()
+    focusId.value = c.id
+    moveDown()
+    expect(items.value[2].id).toBe(c.id)
+  })
+
+  it('preserves focus after move', () => {
+    const { b } = setup()
+    focusId.value = b.id
+    moveUp()
+    expect(focusId.value).toBe(b.id)
+  })
+
+  it('is undoable', () => {
+    const { a, b } = setup()
+    focusId.value = b.id
+    moveUp()
+    expect(items.value[0].id).toBe(b.id)
+    undo()
+    expect(items.value[0].id).toBe(a.id)
   })
 })

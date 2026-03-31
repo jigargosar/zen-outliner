@@ -25,6 +25,8 @@ Live: https://jigargosar.github.io/zen-outliner/
 13. Shift+Tab — Outdent (move to parent's level)
 14. Backspace (NAV mode) — Delete focused node
 15. Delete (NAV mode) — Delete focused node
+30. Alt+↑ — Move node up among siblings
+31. Alt+↓ — Move node down among siblings
 
 ## Data Safety
 
