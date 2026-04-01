@@ -4,6 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 zen-outliner — A keyboard-driven outliner. The goal: a fast, focused tool for thinking in trees.
 
+## Core USP
+
+- **Data safety** — audit journal tracking every change (who, what, when)
+- **Multi-level undo** — full undo/redo history, deeper than typical outliners
+- These are not future features — they are the product's differentiators.
+
 ## Commands
 
 ```
@@ -19,12 +25,11 @@ Base URL is `/zen-outliner/`.
 
 ## Architecture
 
-**State: mobx-bonsai tree** (`src/store.ts`)
-- `OutlineNode` — recursive tree node type with `id`, `text`, `children`, `collapsed`.
-  Actions live on the node type: `setText`, `toggleCollapse`, `addChild`, `removeChild`.
-- `OutlineStore` — root container holding top-level `children`. Has its own `addChild`/`removeChild`.
-- `getSiblings(node)` — helper that walks up via `getParent` to get a node's sibling list.
-- Actions are called via `TOutlineNode.actionName(node, ...)` (mobx-bonsai pattern).
+**State: plain MobX flat map** (`src/store.ts`)
+- `OutlineNode` — flat record with `id`, `text`, `parentId`, `order`, `collapsed`.
+- `OutlineStore` — class with `observable.map<string, OutlineNode>`, actions, and derived queries.
+- Sibling ordering via `fractional-indexing`.
+- UI state (`selectedId`) lives on the store class.
 
 **View: React + mobx-react-lite** (`src/App.tsx`)
 - `NodeView` — recursive observer component rendering a single node and its children.
