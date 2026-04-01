@@ -198,8 +198,8 @@ const snap = getSnapshot(todo)
 // Reconstruct from snapshot
 const todo = fromSnapshot(Todo, snap)
 
-// Reconstruct with fresh IDs
-const copy = fromSnapshot(Todo, snap, { generateNewIds: true })
+// Clone with fresh IDs (generateNewIds is a clone option, not fromSnapshot)
+const copy = clone(todo)  // generates new IDs by default
 
 // Reconcile existing instance with new data
 applySnapshot(todo, newSnap)
@@ -421,16 +421,18 @@ const undoManager = undoMiddleware(root, undefined, {
 
 ### Event Structure
 
-Each `UndoEvent` records:
+Each undo event records patches and their inverses. The event contains an array of `PatchRecorderEvent` objects:
 
 ```typescript
+// PatchRecorderEvent (each recording within an undo event)
 {
-    targetPath: Path,
-    actionName: string,
-    patches: ReadonlyArray<Patch>,         // for redo
-    inversePatches: ReadonlyArray<Patch>,  // for undo
+    target: object,                        // the model that was patched
+    patches: Patch[],                      // forward patches (for redo)
+    inversePatches: Patch[],               // inverse patches (for undo)
 }
 ```
+
+Note: the exact `UndoEvent` shape may include additional metadata (action name, grouping info). Consult the TypeScript types in the installed package for the full interface.
 
 ### Grouping Multiple Actions
 
@@ -703,7 +705,7 @@ const shapeType = types.or(
 ### DON'T
 
 - Use `as`, `any`, or `!` to work around types — if the types don't work, the model definition is wrong
-- Expect true generics on model props — you need a concrete class per type combination (GitHub issue #239)
+- Assume generics work identically to plain TS classes — while generic model syntax (`Model(<T>() => ({...}))<T>`) is supported, serialization may still require concrete classes per type combination
 
 ---
 
@@ -757,7 +759,7 @@ const shapeType = types.or(
 | TypeScript | Native | Weak inference, `self`/`this` confusion | First-class, `this` everywhere |
 | Self-recursive models | Manual | Requires `types.late` hacks | Native support |
 | Snapshots | Manual `toJSON` | Built-in | Built-in |
-| Undo/redo | Hand-roll | Hand-roll or library | `undoMiddleware` included |
+| Undo/redo | Hand-roll | Separate first-party package (`mst-middlewares`) | `undoMiddleware` included in core |
 | Action middleware | `spy()` / `intercept()` | MST middleware | `onActionMiddleware` with serialization |
 | Tree structure | Manual | Built-in | Built-in |
 | `instanceof` | Works | Does not work (opaque wrappers) | Works |
